@@ -1,0 +1,1890 @@
+app\Helpers\helpers.php: 
+<?php
+
+use Illuminate\Support\Str;
+use App\Models\Poultry\Batch;
+
+if (!function_exists('format_currency')) {
+    function format_currency($value, $default = '₦0.00')
+    {
+        if (is_null($value) || $value === '') {
+            return $default;
+        }
+        try {
+            $amount = floatval($value);
+            return '₦' . number_format($amount, 2);
+        } catch (\Exception $e) {
+            return $default;
+        }
+    }
+}
+
+if (!function_exists('format_weight')) {
+    function format_weight($value, $default = '0.000 kg')
+    {
+        if (is_null($value) || $value === '') {
+            return $default;
+        }
+        try {
+            $weight = floatval($value);
+            return number_format($weight, 3) . ' kg';
+        } catch (\Exception $e) {
+            return $default;
+        }
+    }
+}
+
+if (!function_exists('format_percentage')) {
+    function format_percentage($value, $decimals = 1, $default = '0%')
+    {
+        if (is_null($value) || $value === '') {
+            return $default;
+        }
+        try {
+            $percent = floatval($value);
+            return number_format($percent, $decimals) . '%';
+        } catch (\Exception $e) {
+            return $default;
+        }
+    }
+}
+
+if (!function_exists('format_fcr')) {
+    function format_fcr($value, $decimals = 3, $default = '0.000')
+    {
+        if (is_null($value) || $value === '') {
+            return $default;
+        }
+        try {
+            $fcr = floatval($value);
+            return number_format($fcr, $decimals);
+        } catch (\Exception $e) {
+            return $default;
+        }
+    }
+}
+
+if (!function_exists('format_date')) {
+    function format_date($date, $format = 'd M Y')
+    {
+        if (!$date) {
+            return 'N/A';
+        }
+        if ($date instanceof \DateTimeInterface) {
+            return $date->format($format);
+        }
+        try {
+            return \Carbon\Carbon::parse($date)->format($format);
+        } catch (\Exception $e) {
+            return 'Invalid date';
+        }
+    }
+}
+
+// Badge helpers (return HTML)
+if (!function_exists('batch_status_badge')) {
+    function batch_status_badge($status)
+    {
+        $classes = [
+            'active' => 'bg-green-100 text-green-800',
+            'closed' => 'bg-gray-100 text-gray-800',
+            'completed' => 'bg-blue-100 text-blue-800',
+        ];
+        $label = ucfirst($status);
+        $class = $classes[$status] ?? 'bg-gray-100 text-gray-800';
+        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+    }
+}
+
+if (!function_exists('priority_badge')) {
+    function priority_badge($priority)
+    {
+        $classes = [
+            'critical' => 'bg-red-100 text-red-800',
+            'high' => 'bg-orange-100 text-orange-800',
+            'medium' => 'bg-yellow-100 text-yellow-800',
+            'low' => 'bg-blue-100 text-blue-800',
+        ];
+        $label = ucfirst($priority);
+        $class = $classes[$priority] ?? 'bg-gray-100 text-gray-800';
+        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+    }
+}
+
+if (!function_exists('observation_status_badge')) {
+    function observation_status_badge($status)
+    {
+        $classes = [
+            'pending' => 'bg-yellow-100 text-yellow-800',
+            'reviewed' => 'bg-blue-100 text-blue-800',
+            'resolved' => 'bg-green-100 text-green-800',
+            'closed' => 'bg-gray-100 text-gray-800',
+            'action_taken' => 'bg-purple-100 text-purple-800',
+        ];
+        $label = ucfirst(str_replace('_', ' ', $status));
+        $class = $classes[$status] ?? 'bg-gray-100 text-gray-800';
+        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+    }
+}
+
+if (!function_exists('cv_status_badge')) {
+    function cv_status_badge($status)
+    {
+        $classes = [
+            'excellent' => 'bg-green-100 text-green-800',
+            'caution' => 'bg-yellow-100 text-yellow-800',
+            'warning' => 'bg-orange-100 text-orange-800',
+            'rejected' => 'bg-red-100 text-red-800',
+        ];
+        $label = ucfirst($status);
+        $class = $classes[$status] ?? 'bg-gray-100 text-gray-800';
+        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+    }
+}
+
+if (!function_exists('notification_type_badge')) {
+    function notification_type_badge($type)
+    {
+        $classes = [
+            'weighing_day' => 'bg-blue-100 text-blue-800',
+            'missed_weighing' => 'bg-yellow-100 text-yellow-800',
+            'low_stock' => 'bg-red-100 text-red-800',
+            'batch_closed' => 'bg-green-100 text-green-800',
+            'system' => 'bg-gray-100 text-gray-800',
+            'slaughter_trigger' => 'bg-red-100 text-red-800',
+            'observation_report' => 'bg-purple-100 text-purple-800',
+            'manual_mode' => 'bg-orange-100 text-orange-800',
+        ];
+        $label = ucfirst(str_replace('_', ' ', $type));
+        $class = $classes[$type] ?? 'bg-gray-100 text-gray-800';
+        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+    }
+}
+
+if (!function_exists('days_since')) {
+    function days_since($date)
+    {
+        if (!$date) {
+            return 'N/A';
+        }
+        try {
+            $carbon = \Carbon\Carbon::parse($date);
+            return $carbon->diffForHumans();
+        } catch (\Exception $e) {
+            return 'N/A';
+        }
+    }
+}
+
+// Calculate percentage of total
+if (!function_exists('percentage_of')) {
+    function percentage_of($part, $total, $decimals = 1)
+    {
+        if ($total == 0) {
+            return 0;
+        }
+        return round(($part / $total) * 100, $decimals);
+    }
+}
+
+if (!function_exists('sector_id')) {
+    function sector_id(string $slug): int
+    {
+        static $cache = [];
+        if (isset($cache[$slug])) {
+            return $cache[$slug];
+        }
+        $sector = \App\Models\Sector::where('slug', $slug)->first();
+        $cache[$slug] = $sector?->id ?? 0;
+        return $cache[$slug];
+    }
+}
+
+app\Http\Controllers\General\AdminUserController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class AdminUserController extends Controller
+{
+    public function index(Request $request)
+    {
+        Gate::authorize('manage-users');
+
+        $query = User::with('roles')->orderBy('created_at', 'desc');
+
+        if ($request->role) {
+            $query->where('role', $request->role);
+        }
+        if ($request->approved === 'pending') {
+            $query->where('is_approved', false);
+        } elseif ($request->approved === 'approved') {
+            $query->where('is_approved', true);
+        }
+
+        $users = $query->paginate(20);
+        $pendingCount = User::where('is_approved', false)->count();
+
+        return view('general.admin.users.index', compact('users', 'pendingCount'));
+    }
+
+    public function approve(User $user)
+    {
+        Gate::authorize('manage-users');
+
+        $user->update([
+            'is_approved' => true,
+            'approved_by_id' => auth()->id(),
+            'approved_at' => now(),
+        ]);
+
+        return redirect()->back()->with('success', "User {$user->name} approved.");
+    }
+
+    public function deactivate(User $user)
+    {
+        Gate::authorize('manage-users');
+
+        $user->update(['is_active' => false]);
+        return redirect()->back()->with('success', "User {$user->name} deactivated.");
+    }
+}
+
+app\Http\Controllers\General\DashboardController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\Sector;
+use App\Services\Poultry\DashboardService as PoultryDashboardService;
+use Illuminate\Support\Facades\Auth;
+
+class DashboardController extends Controller
+{
+    public function index()
+    {
+        $user = Auth::user();
+        $role = $user->role;
+
+        if (! $user->is_approved) {
+            return view('general.dashboard.pending-approval', compact('user', 'role'));
+        }
+
+        // Get selected sector from session
+        $sectorId = session('selected_sector_id');
+        $sector = Sector::find($sectorId);
+
+        if (! $sector) {
+            return redirect()->route('sectors.index');
+        }
+
+        // Determine which dashboard service to use
+        $data = [];
+        $view = "general.dashboard.{$role}";
+
+        if ($sector->slug === 'poultry') {
+            // Poultry sector uses the dedicated service
+            $data = PoultryDashboardService::getDashboardData($user, $role);
+        } else {
+            // For other sectors, provide a generic fallback
+            $data = [
+                'sector' => $sector,
+                'message' => "Dashboard for {$sector->name} is under development.",
+            ];
+            $view = 'general.dashboard.generic';
+        }
+
+        // Add common data
+        $data['sector'] = $sector;
+        $data['user'] = $user;
+        $data['role'] = $role;
+
+        return view($view, $data);
+    }
+}
+
+app\Http\Controllers\General\ExportController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\Poultry\Batch;
+use App\Services\Poultry\ExportService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class ExportController extends Controller
+{
+    public function index()
+    {
+        Gate::authorize('export');
+        $batches = Batch::where('status', 'active')->get();
+        return view('general.export.index', compact('batches'));
+    }
+
+    public function export(Request $request)
+    {
+        Gate::authorize('export');
+
+        $request->validate([
+            'export_type' => 'required|in:batch,database,analytics,financial',
+            'format' => 'required|in:excel,csv,pdf',
+            'batch_id' => 'required_if:export_type,batch|exists:poultry_batches,id',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+        ]);
+
+        if ($request->export_type === 'batch') {
+            $batch = Batch::findOrFail($request->batch_id);
+            return ExportService::exportBatchToExcel($batch);
+        }
+
+        // Other export types...
+        return redirect()->back()->with('info', 'Export feature for this type coming soon.');
+    }
+}
+
+app\Http\Controllers\General\HistoryQueryController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\HistoryQuery;
+use App\Models\Batch;
+use App\Models\User;
+use App\Services\HistoryQueryService;
+use Illuminate\Http\Request;
+
+class HistoryQueryController extends Controller
+{
+    public function index()
+    {
+        $queries = HistoryQuery::where('created_by_id', auth()->id())
+            ->latest('last_executed')
+            ->take(10)
+            ->get();
+
+        $batches = Batch::where('status', 'active')->get();
+        $users = User::where('is_approved', true)->get();
+
+        return view('general.history.index', compact('queries', 'batches', 'users'));
+    }
+
+    public function execute(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'nullable|string|max:200',
+            'query_type' => 'required|string|in:expenses,feed,weight,flock,observations,inventory,all',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'user_filter' => 'nullable|exists:users,id',
+            'batch_filter' => 'nullable|exists:poultry_batches,id',
+            'category_filter' => 'nullable|string|max:100',
+            'min_amount' => 'nullable|numeric|min:0',
+            'max_amount' => 'nullable|numeric|min:0|gt:min_amount',
+        ]);
+
+        $result = HistoryQueryService::execute($data);
+
+        if (!empty($data['name'])) {
+            $query = HistoryQuery::create([
+                'name' => $data['name'],
+                'query_type' => $data['query_type'],
+                'date_from' => $data['date_from'] ?? null,
+                'date_to' => $data['date_to'] ?? null,
+                'user_filter_id' => $data['user_filter'] ?? null,
+                'batch_filter_id' => $data['batch_filter'] ?? null,
+                'category_filter' => $data['category_filter'] ?? null,
+                'min_amount' => $data['min_amount'] ?? null,
+                'max_amount' => $data['max_amount'] ?? null,
+                'result_count' => $result['count'],
+                'execution_time_ms' => $result['execution_time_ms'],
+                'last_executed' => now(),
+                'created_by_id' => auth()->id(),
+            ]);
+        }
+
+        return view('general.history.results', [
+            'results' => $result['results'],
+            'summary' => $result['summary'] ?? null,
+        ]);
+    }
+
+    public function show(HistoryQuery $historyQuery)
+    {
+        Gate::authorize('view', $historyQuery);
+        // Re-run the query
+        $data = $historyQuery->toArray();
+        $result = HistoryQueryService::execute($data);
+        return view('general.history.show', compact('historyQuery', 'result'));
+    }
+}
+
+app\Http\Controllers\General\MarketPriceController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\MarketPrice;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Carbon\Carbon;
+
+class MarketPriceController extends Controller
+{
+    /**
+     * Display a listing of market prices.
+     */
+    public function index()
+    {
+        Gate::authorize('manage-market-prices');
+
+        $currentPrice = MarketPrice::getCurrentPrices();
+        $priceHistory = MarketPrice::getPriceHistory(30);
+
+        return view('general.system.market-prices.index', compact('currentPrice', 'priceHistory'));
+    }
+
+    /**
+     * Store a newly created market price.
+     */
+    public function store(Request $request)
+    {
+        Gate::authorize('manage-market-prices');
+
+        $request->validate([
+            'price_per_bird' => 'required|numeric|min:0.01',
+            'price_per_kg' => 'required|numeric|min:0.01',
+            'price_per_carton' => 'required|numeric|min:0.01',
+            'effective_date' => 'required|date',
+            'notes' => 'nullable|string|max:500',
+            'is_active' => 'nullable|boolean',
+        ]);
+
+        // If activating this price, deactivate others
+        if ($request->has('is_active')) {
+            MarketPrice::where('is_active', true)->update(['is_active' => false]);
+        }
+
+        $price = MarketPrice::create([
+            'price_per_bird' => $request->price_per_bird,
+            'price_per_kg' => $request->price_per_kg,
+            'price_per_carton' => $request->price_per_carton,
+            'effective_date' => $request->effective_date,
+            'notes' => $request->notes,
+            'is_active' => $request->has('is_active'),
+            'set_by_id' => auth()->id(),
+        ]);
+
+        return redirect()->route('system.market-prices.index')
+            ->with('success', 'Market price created successfully.');
+    }
+}
+
+app\Http\Controllers\General\NotificationController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Services\NotificationService;
+use Illuminate\Http\Request;
+
+class NotificationController extends Controller
+{
+    public function index()
+    {
+        $readStatuses = NotificationService::getUserNotifications(auth()->user());
+        return view('general.notifications.index', compact('readStatuses'));
+    }
+
+    public function markRead(Request $request, int $notificationId)
+    {
+        $success = NotificationService::markAsRead(auth()->user(), $notificationId);
+        return response()->json(['success' => $success]);
+    }
+
+    public function clearAll()
+    {
+        $user = auth()->user();
+        $user->notificationReadStatuses()->where('is_read', false)->update([
+            'is_read' => true,
+            'read_at' => now()
+        ]);
+        return redirect()->back()->with('success', 'All notifications marked as read.');
+    }
+}
+
+app\Http\Controllers\General\ObservationController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\ObservationReport;
+use App\Models\ObservationCategory;
+use App\Models\Poultry\Batch;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class ObservationController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = ObservationReport::with('category', 'reportedBy');
+
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->priority) {
+            $query->where('priority', $request->priority);
+        }
+        if (auth()->user()->role === 'manager') {
+            $query->where('reported_by_id', auth()->id());
+        }
+
+        $observations = $query->latest('reported_at')->paginate(20);
+        return view('general.observations.index', compact('observations'));
+    }
+
+    public function create()
+    {
+        Gate::authorize('create', ObservationReport::class);
+        $categories = ObservationCategory::where('is_active', true)->get();
+        $batches = Batch::where('status', 'active')->get();
+        return view('general.observations.create', compact('categories', 'batches'));
+    }
+
+    public function store(Request $request)
+    {
+        Gate::authorize('create', ObservationReport::class);
+
+        $data = $request->validate([
+            'title' => 'required|string|max:200',
+            'category_id' => 'nullable|exists:observation_categories,id',
+            'other_category' => 'nullable|string|max:100',
+            'description' => 'required|string',
+            'priority' => 'required|in:low,medium,high,critical',
+            'affected_batches' => 'nullable|array',
+            'affected_batches.*' => 'exists:poultry_batches,id',
+        ]);
+
+        $report = ObservationReport::create([
+            'title' => $data['title'],
+            'category_id' => $data['category_id'] ?? null,
+            'other_category' => $data['other_category'] ?? null,
+            'description' => $data['description'],
+            'priority' => $data['priority'],
+            'reported_by_id' => auth()->id(),
+            'reported_at' => now(),
+            'status' => 'pending',
+        ]);
+
+        if (!empty($data['affected_batches'])) {
+            $report->affected_batch_ids = $data['affected_batches'];
+            $report->save();
+        }
+
+        // Create notification for admins
+        \App\Models\Notification::createGlobal(
+            'observation_report',
+            "New Observation: {$report->title}",
+            "{$report->reportedBy->name} submitted a new observation.",
+            auth()->user(),
+            null,
+            $report
+        );
+
+        return redirect()->route('observations.index')->with('success', 'Observation submitted.');
+    }
+
+    public function show(ObservationReport $observation)
+    {
+        Gate::authorize('view', $observation);
+        return view('general.observations.show', compact('observation'));
+    }
+
+    public function review(Request $request, ObservationReport $observation)
+    {
+        Gate::authorize('review', $observation);
+
+        $request->validate([
+            'action' => 'required|in:review,resolve,close',
+            'admin_response' => 'nullable|string',
+            'actions_taken' => 'nullable|string',
+        ]);
+
+        $observation->admin_response = $request->admin_response;
+        $observation->actions_taken = $request->actions_taken;
+
+        switch ($request->action) {
+            case 'review':
+                $observation->status = 'reviewed';
+                $observation->reviewed_by_id = auth()->id();
+                $observation->reviewed_at = now();
+                break;
+            case 'resolve':
+                $observation->status = 'resolved';
+                $observation->resolved_by_id = auth()->id();
+                $observation->resolved_at = now();
+                break;
+            case 'close':
+                $observation->status = 'closed';
+                break;
+        }
+        $observation->save();
+
+        return redirect()->route('observations.show', $observation)->with('success', 'Observation updated.');
+    }
+}
+
+app\Http\Controllers\General\PriceCalculatorController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\SystemVariable;
+use Illuminate\Http\Request;
+
+class PriceCalculatorController extends Controller
+{
+    public function index()
+    {
+        $profitMargin = SystemVariable::getValue('profit_margin', 20);
+        $dressPercentage = SystemVariable::getValue('dress_percentage', 75);
+        return view('general.price-calculator', compact('profitMargin', 'dressPercentage'));
+    }
+
+    public function calculate(Request $request)
+    {
+        $request->validate([
+            'cost_per_bird' => 'required|numeric|min:0',
+            'dressed_weight' => 'required|numeric|min:0.001',
+            'target_margin' => 'required|numeric|min:0',
+        ]);
+
+        $costPerBird = $request->cost_per_bird;
+        $dressedWeight = $request->dressed_weight;
+        $targetMargin = $request->target_margin;
+
+        $suggestedPricePerKg = ($costPerBird * (1 + $targetMargin / 100)) / $dressedWeight;
+        $minimumPrice = ($costPerBird / $dressedWeight); // break-even
+
+        return response()->json([
+            'suggested_price_per_kg' => round($suggestedPricePerKg, 2),
+            'minimum_price_per_kg' => round($minimumPrice, 2),
+            'profit_margin' => $targetMargin,
+        ]);
+    }
+}
+
+app\Http\Controllers\General\ProfileController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+
+class ProfileController extends Controller
+{
+    /**
+     * Show the user's profile.
+     */
+    public function show()
+    {
+        $user = auth()->user();
+
+        // For staff, get some stats
+        $stats = [];
+        if ($user->role === 'staff') {
+            $stats = [
+                'flock_records' => \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->count(),
+                'weight_records' => \App\Models\Poultry\WeightRecord::where('recorded_by_id', $user->id)->count(),
+                'feed_records' => \App\Models\Poultry\FeedRecord::where('recorded_by_id', $user->id)->count(),
+                'batches_created' => \App\Models\Poultry\Batch::where('created_by_id', $user->id)->count(),
+                'last_flock_date' => \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->latest('date')->first()?->date?->format('M d, Y'),
+                'last_weight_date' => \App\Models\Poultry\WeightRecord::where('recorded_by_id', $user->id)->latest('date')->first()?->date?->format('M d, Y'),
+                'last_feed_date' => \App\Models\Poultry\FeedRecord::where('recorded_by_id', $user->id)->latest('date')->first()?->date?->format('M d, Y'),
+            ];
+        }
+
+        return view('general.profile.show', compact('user', 'stats'));
+    }
+
+    /**
+     * Show the profile edit form.
+     */
+    public function edit()
+    {
+        return view('general.profile.edit', ['user' => auth()->user()]);
+    }
+
+    /**
+     * Update the user's profile.
+     */
+    public function update(Request $request)
+    {
+        $user = auth()->user();
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
+            'phone' => 'nullable|string|max:20',
+            'farm_location' => 'nullable|string|max:255',
+            'current_password' => 'nullable|string|min:8',
+            'password' => 'nullable|string|min:8|confirmed',
+        ]);
+
+        // Update basic info
+        $user->name = $request->name;
+        $user->email = $request->email;
+        $user->phone = $request->phone;
+        $user->farm_location = $request->farm_location;
+
+        // Change password if provided
+        if ($request->filled('current_password') && $request->filled('password')) {
+            if (!Hash::check($request->current_password, $user->password)) {
+                return back()->withErrors(['current_password' => 'The current password is incorrect.']);
+            }
+            $user->password = Hash::make($request->password);
+        }
+
+        $user->save();
+
+        return redirect()->route('profile.show')->with('success', 'Profile updated successfully.');
+    }
+}
+
+app\Http\Controllers\General\SectorController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\Sector;
+
+class SectorController extends Controller
+{
+    public function index()
+    {
+        $sectors = Sector::all();
+        return view('sectors.index', compact('sectors'));
+    }
+}
+
+app\Http\Controllers\General\SectorSelectionController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\Sector;
+
+class SectorController extends Controller
+{
+    public function index()
+    {
+        $sectors = Sector::all();
+        return view('sectors.index', compact('sectors'));
+    }
+}
+
+app\Http\Controllers\General\SectorSelectionController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\Sector;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class SectorSelectionController extends Controller
+{
+    /**
+     * Show the sector selection page.
+     */
+    public function index()
+    {
+        $sectors = Sector::where('is_live', true)->get();
+        return view('sectors.index', compact('sectors'));
+    }
+
+    /**
+     * Store the selected sector in session and redirect to dashboard.
+     */
+    public function select(Request $request)
+    {
+        $request->validate([
+            'sector_id' => 'required|exists:sectors,id',
+        ]);
+
+        $sector = Sector::findOrFail($request->sector_id);
+
+        // Store in session
+        session(['selected_sector_id' => $sector->id]);
+        session(['selected_sector_slug' => $sector->slug]);
+
+        return redirect()->route('dashboard');
+    }
+}
+
+app\Http\Controllers\General\SystemVariableController.php:
+<?php
+
+namespace App\Http\Controllers\General;
+
+use App\Http\Controllers\Controller;
+use App\Models\SystemVariable;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class SystemVariableController extends Controller
+{
+    /**
+     * Display a listing of system variables.
+     */
+    public function index()
+    {
+        Gate::authorize('manage-system-variables');
+
+        $variables = SystemVariable::orderBy('category')->orderBy('name')->get();
+
+        return view('general.system.variables.index', compact('variables'));
+    }
+
+    /**
+     * Show the form for editing the specified variable.
+     */
+    public function edit(SystemVariable $variable)
+    {
+        Gate::authorize('manage-system-variables');
+
+        return view('general.system.variables.edit', compact('variable'));
+    }
+
+    /**
+     * Update the specified variable in storage.
+     */
+    public function update(Request $request, SystemVariable $variable)
+    {
+        Gate::authorize('manage-system-variables');
+
+        $request->validate([
+            'value' => 'required|string',
+            'description' => 'nullable|string',
+            'is_active' => 'nullable|boolean',
+        ]);
+
+        $variable->value = $request->value;
+        $variable->description = $request->description;
+        $variable->is_active = $request->has('is_active');
+        $variable->updated_by_id = auth()->id();
+        $variable->save();
+
+        // Clear cache for this variable
+        \Illuminate\Support\Facades\Cache::forget("system_var_{$variable->key}");
+
+        return redirect()->route('system.variables.index')
+            ->with('success', "Variable '{$variable->name}' updated successfully.");
+    }
+}
+
+app\Http\Controllers\Poultry\AnalyticsController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Models\Poultry\Batch;
+use App\Services\Poultry\BatchAnalyticsService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class AnalyticsController extends Controller
+{
+    /**
+     * Global analytics across all batches.
+     */
+    public function global()
+    {
+        Gate::authorize('viewAny', Batch::class);
+
+        // Total counts
+        $totalBatches = Batch::count();
+        $activeBatches = Batch::where('status', 'active')->count();
+        $completedBatches = Batch::whereIn('status', ['closed', 'completed'])->count();
+
+        // Financials
+        $totalInvestment = Batch::where('status', 'active')->get()->sum(function ($batch) {
+            return $batch->calculateTotalInvestment();
+        });
+
+        // Averages
+        $avgFcr = Batch::where('status', 'active')->where('current_cfcr', '>', 0)->avg('current_cfcr') ?? 0;
+        $avgMortality = Batch::where('status', 'active')->where('starting_flock', '>', 0)->get()->map(function ($batch) {
+            return ($batch->total_mortality / $batch->starting_flock) * 100;
+        })->avg() ?? 0;
+
+        // Recent performance data (for table and charts)
+        $recentPerformance = Batch::orderBy('created_at', 'desc')->limit(10)->get()->map(function ($batch) {
+            return [
+                'batch' => $batch->batch_id,
+                'status' => $batch->status,
+                'age' => $batch->current_age_days,
+                'ifcr' => $batch->current_ifcr,
+                'cfcr' => $batch->current_cfcr,
+                'mortality' => $batch->starting_flock > 0 ? ($batch->total_mortality / $batch->starting_flock) * 100 : 0,
+                'profit_percent' => $batch->current_marginal_profit_percent,
+            ];
+        })->toArray();
+
+        // Top performers (profit > 20%)
+        $topPerformers = array_filter($recentPerformance, function ($p) {
+            return ($p['profit_percent'] ?? 0) > 20;
+        });
+
+        // Areas for improvement (mortality > 8% or profit < 5%)
+        $improvementAreas = array_filter($recentPerformance, function ($p) {
+            return ($p['mortality'] ?? 0) > 8 || ($p['profit_percent'] ?? 0) < 5;
+        });
+
+        return view('sectors.poultry.analytics.global', compact(
+            'totalBatches',
+            'activeBatches',
+            'completedBatches',
+            'totalInvestment',
+            'avgFcr',
+            'avgMortality',
+            'recentPerformance',
+            'topPerformers',
+            'improvementAreas'
+        ));
+    }
+
+    /**
+     * Charts for a specific batch.
+     */
+    public function charts(Batch $batch)
+    {
+        Gate::authorize('view', $batch);
+
+        $chartData = BatchAnalyticsService::getBatchChartData($batch, 30);
+        $batch->updateCachedMetrics();
+
+        return view('sectors.poultry.analytics.charts', compact('batch', 'chartData'));
+    }
+
+    /**
+     * Real-time charts for a batch (with auto-refresh).
+     */
+    public function realtime(Batch $batch)
+    {
+        Gate::authorize('view', $batch);
+
+        return view('sectors.poultry.analytics.realtime', compact('batch'));
+    }
+
+    /**
+     * API endpoint for chart data (AJAX).
+     */
+    public function chartData(Batch $batch, Request $request)
+    {
+        Gate::authorize('view', $batch);
+
+        $days = $request->input('days', 30);
+        $chartData = BatchAnalyticsService::getBatchChartData($batch, $days);
+
+        // Prepare KPI data
+        $batch->updateCachedMetrics();
+        $currentWeight = $batch->getCurrentAverageWeight();
+        $currentMortality = $batch->starting_flock > 0 ? ($batch->total_mortality / $batch->starting_flock) * 100 : 0;
+        $currentAdg = $batch->calculate_daily_marginal_profit_percent(); // This is actually ADG? Might need separate method.
+
+        // Format historical data for table
+        $historicalData = [];
+        if (!empty($chartData['age_vs_weight']['ages'])) {
+            $count = count($chartData['age_vs_weight']['ages']);
+            for ($i = 0; $i < $count; $i++) {
+                $historicalData[] = [
+                    'date' => $chartData['ifcr_vs_cfcr']['dates'][$i] ?? '',
+                    'age' => $chartData['age_vs_weight']['ages'][$i] ?? 0,
+                    'weight' => $chartData['age_vs_weight']['weights'][$i] ?? 0,
+                    'ifcr' => $chartData['ifcr_vs_cfcr']['ifcr'][$i] ?? 0,
+                    'cfcr' => $chartData['ifcr_vs_cfcr']['cfcr'][$i] ?? 0,
+                    'mortality' => $chartData['mortality_trend']['mortality'][$i] ?? 0,
+                    'adg' => $chartData['adg_vs_age']['adg'][$i] ?? 0,
+                ];
+            }
+        }
+
+        return response()->json([
+            'weight_data' => [
+                'labels' => $chartData['age_vs_weight']['ages'] ?? [],
+                'values' => $chartData['age_vs_weight']['weights'] ?? [],
+            ],
+            'fcr_data' => [
+                'labels' => $chartData['ifcr_vs_cfcr']['dates'] ?? [],
+                'ifcr_values' => $chartData['ifcr_vs_cfcr']['ifcr'] ?? [],
+                'cfcr_values' => $chartData['ifcr_vs_cfcr']['cfcr'] ?? [],
+            ],
+            'current_weight' => $currentWeight,
+            'current_ifcr' => $batch->current_ifcr,
+            'current_cfcr' => $batch->current_cfcr,
+            'current_mortality' => $currentMortality,
+            'current_adg' => $currentAdg,
+            'historical_data' => $historicalData,
+        ]);
+    }
+}
+
+app\Http\Controllers\Poultry\BatchController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Poultry\BatchRequest;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\Pen;
+use App\Services\Poultry\BatchCalculationService;
+use App\Services\Poultry\BatchTriggerService;
+use App\Services\Poultry\ExportService;
+use App\Services\SystemService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class BatchController extends Controller
+{
+    /**
+     * Display a listing of batches.
+     */
+    public function index(Request $request)
+    {
+        Gate::authorize('viewAny', Batch::class);
+
+        $query = Batch::with('pen', 'createdBy')
+            ->where('sector_id', sector_id('poultry'))
+            ->orderBy('created_at', 'desc');
+
+        // Apply status filter
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Apply search filter
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('batch_id', 'like', "%{$search}%")
+                  ->orWhere('name', 'like', "%{$search}%");
+            });
+        }
+
+        $batches = $query->paginate(20);
+
+        // Calculate summary statistics (only for active batches)
+        $activeBatches = Batch::where('status', 'active')->where('sector_id', sector_id('poultry'));
+        $totalStarting = $activeBatches->sum('starting_flock');
+        $totalRemaining = $activeBatches->sum('remaining_flock');
+
+        return view('sectors.poultry.batches.index', compact(
+            'batches',
+            'totalStarting',
+            'totalRemaining'
+        ));
+    }
+
+    /**
+     * Show the form for creating a new batch.
+     */
+    public function create()
+    {
+        Gate::authorize('create', Batch::class);
+
+        $availablePens = Pen::available()->get();
+
+        return view('sectors.poultry.batches.create', compact('availablePens'));
+    }
+
+    /**
+     * Store a newly created batch in storage.
+     */
+    public function store(BatchRequest $request)
+    {
+        Gate::authorize('create', Batch::class);
+
+        $validated = $request->validated();
+
+        // Set remaining flock equal to starting flock
+        $validated['remaining_flock'] = $validated['starting_flock'];
+
+        // Auto-generate batch_id if not provided
+        if (empty($validated['batch_id'])) {
+            // We'll generate after save
+        }
+
+        $batch = DB::transaction(function () use ($validated, $request) {
+            $batch = Batch::create([
+                'batch_id' => $validated['batch_id'] ?? null, // will be generated later
+                'name' => $validated['name'],
+                'hatchery' => $validated['hatchery'] ?? null,
+                'start_date' => $validated['start_date'],
+                'starting_flock' => $validated['starting_flock'],
+                'remaining_flock' => $validated['starting_flock'],
+                'phase' => $validated['phase'],
+                'initial_chicken_cost' => $validated['initial_chicken_cost'] ?? 0,
+                'sector_id' => sector_id('poultry'),
+                'created_by_id' => auth()->id(),
+                'status' => 'active',
+            ]);
+
+            // Auto-generate batch_id if not provided
+            if (empty($batch->batch_id)) {
+                $batch->batch_id = 'B' . str_pad($batch->id, 4, '0', STR_PAD_LEFT);
+                $batch->save();
+            }
+
+            // Assign pen if phase is batch and pen exists
+            if ($batch->phase === 'batch') {
+                $pen = Pen::available()->first();
+                if ($pen) {
+                    $pen->occupy($batch);
+                    $batch->pen_id = $pen->id;
+                    $batch->save();
+                } else {
+                    // Warn but allow creation
+                    session()->flash('warning', 'No available pen for batch phase. Batch created without pen assignment.');
+                }
+            }
+
+            // Update calculated selling price (based on profit margin)
+            $batch->updateCachedMetrics();
+
+            return $batch;
+        });
+
+        return redirect()->route('poultry.batches.show', $batch)
+            ->with('success', "Batch {$batch->batch_id} created successfully.");
+    }
+
+    /**
+     * Display the specified batch.
+     */
+    public function show(Batch $batch)
+    {
+        Gate::authorize('view', $batch);
+
+        // Auto-refresh metrics
+        $batch->updateCachedMetrics();
+
+        // Get financial metrics
+        $financialMetrics = $batch->getFinancialMetrics();
+
+        // Get slaughter triggers
+        $slaughterTriggers = $batch->checkSlaughterTriggers();
+
+        // Get recent records for tabs
+        $recentWeight = $batch->weightRecords()->with('recordedBy')->latest('date')->limit(10)->get();
+        $recentFeed = $batch->feedRecords()->with('recordedBy', 'inventoryItem')->latest('date')->limit(10)->get();
+        $recentExpenses = $batch->expenses()->with('recordedBy')->latest('date')->limit(10)->get();
+        $recentFlock = $batch->flockRecords()->with('recordedBy')->latest('date')->limit(10)->get();
+
+        // Chart data for the batch (last 30 days)
+        $chartData = \App\Services\Poultry\BatchAnalyticsService::getBatchChartData($batch, 30);
+
+        return view('sectors.poultry.batches.show', compact(
+            'batch',
+            'financialMetrics',
+            'slaughterTriggers',
+            'recentWeight',
+            'recentFeed',
+            'recentExpenses',
+            'recentFlock',
+            'chartData'
+        ));
+    }
+
+    /**
+     * Show the form for editing the specified batch.
+     */
+    public function edit(Batch $batch)
+    {
+        Gate::authorize('update', $batch);
+
+        $availablePens = Pen::available()->get();
+
+        return view('sectors.poultry.batches.edit', compact('batch', 'availablePens'));
+    }
+
+    /**
+     * Update the specified batch in storage.
+     */
+    public function update(BatchRequest $request, Batch $batch)
+    {
+        Gate::authorize('update', $batch);
+
+        $validated = $request->validated();
+
+        // Prevent changing batch_id or starting_flock once set? We'll allow but warn.
+        // We'll update only allowed fields
+        $batch->fill($validated);
+
+        // If phase changes to batch and no pen assigned, assign automatically
+        if ($batch->phase === 'batch' && is_null($batch->pen_id)) {
+            $pen = Pen::available()->first();
+            if ($pen) {
+                $pen->occupy($batch);
+                $batch->pen_id = $pen->id;
+            } else {
+                session()->flash('warning', 'No available pen for batch phase. Batch remains without pen assignment.');
+            }
+        }
+
+        $batch->save();
+        $batch->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $batch)
+            ->with('success', 'Batch updated successfully.');
+    }
+
+    /**
+     * Remove the specified batch from storage.
+     */
+    public function destroy(Batch $batch)
+    {
+        Gate::authorize('delete', $batch);
+
+        // Release pen if occupied
+        if ($batch->pen) {
+            $batch->pen->vacate();
+        }
+
+        $batchId = $batch->batch_id;
+        $batch->delete();
+
+        return redirect()->route('poultry.batches.index')
+            ->with('success', "Batch {$batchId} deleted.");
+    }
+
+    /**
+     * Export batch data to Excel.
+     */
+    public function export(Batch $batch)
+    {
+        Gate::authorize('export', $batch);
+
+        try {
+            return ExportService::exportBatchToExcel($batch);
+        } catch (\Exception $e) {
+            Log::error('Batch export failed: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Export failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Toggle manual mode for the batch.
+     */
+    public function toggleManualMode(Request $request, Batch $batch)
+    {
+        Gate::authorize('update', $batch);
+
+        if ($batch->is_manual_mode) {
+            // Switch to auto mode
+            $batch->is_manual_mode = false;
+            $batch->manual_mode_reason = null;
+            $batch->manual_mode_enabled_by_id = null;
+            $batch->manual_mode_enabled_at = null;
+            $batch->save();
+
+            // Create notification
+            \App\Models\Notification::createGlobal(
+                'system',
+                "Batch {$batch->batch_id} switched to Auto Mode",
+                "Manual mode disabled for batch {$batch->batch_id} by " . auth()->user()->name,
+                auth()->user(),
+                $batch
+            );
+
+            return redirect()->back()->with('success', 'Batch switched to automatic mode.');
+        } else {
+            // Switch to manual mode
+            $request->validate([
+                'reason' => 'required|string|max:500',
+            ]);
+
+            $batch->is_manual_mode = true;
+            $batch->manual_mode_reason = $request->reason;
+            $batch->manual_mode_enabled_by_id = auth()->id();
+            $batch->manual_mode_enabled_at = now();
+            $batch->save();
+
+            // Create notification
+            \App\Models\Notification::createGlobal(
+                'manual_mode',
+                "Batch {$batch->batch_id} switched to Manual Mode",
+                "Manual mode enabled for batch {$batch->batch_id} by " . auth()->user()->name . ". Reason: {$request->reason}",
+                auth()->user(),
+                $batch
+            );
+
+            return redirect()->back()->with('warning', 'Batch switched to manual mode.');
+        }
+    }
+}
+
+app\Http\Controllers\Poultry\ExpenseController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Poultry\ExpenseRequest;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\Expense;
+use Illuminate\Support\Facades\Gate;
+
+class ExpenseController extends Controller
+{
+    public function index(Batch $batch)
+    {
+        Gate::authorize('view', $batch);
+        $expenses = $batch->expenses()->with('recordedBy')->latest('date')->paginate(20);
+        return view('sectors.poultry.expenses.index', compact('batch', 'expenses'));
+    }
+
+    public function create(Batch $batch)
+    {
+        Gate::authorize('create', Expense::class);
+        return view('sectors.poultry.expenses.create', compact('batch'));
+    }
+
+    public function store(ExpenseRequest $request)
+    {
+        Gate::authorize('create', Expense::class);
+
+        $data = $request->validated();
+        $data['recorded_by_id'] = auth()->id();
+
+        $expense = Expense::create($data);
+        $expense->batch?->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $expense->batch)
+            ->with('success', 'Expense recorded.');
+    }
+
+    public function edit(Expense $expense)
+    {
+        Gate::authorize('update', $expense);
+        return view('sectors.poultry.expenses.edit', compact('expense'));
+    }
+
+    public function update(ExpenseRequest $request, Expense $expense)
+    {
+        Gate::authorize('update', $expense);
+
+        $expense->update($request->validated());
+        $expense->batch?->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $expense->batch)
+            ->with('success', 'Expense updated.');
+    }
+
+    public function destroy(Expense $expense)
+    {
+        Gate::authorize('delete', $expense);
+
+        $batch = $expense->batch;
+        $expense->delete();
+        $batch?->updateCachedMetrics();
+
+        return redirect()->back()->with('success', 'Expense deleted.');
+    }
+}
+
+app\Http\Controllers\Poultry\FeedRecordController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Poultry\FeedRecordRequest;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\FeedRecord;
+use App\Models\Poultry\InventoryItem;
+use Illuminate\Support\Facades\Gate;
+
+class FeedRecordController extends Controller
+{
+    public function index(Batch $batch)
+    {
+        Gate::authorize('view', $batch);
+        $records = $batch->feedRecords()->with('recordedBy', 'inventoryItem')->latest('date')->paginate(20);
+        return view('sectors.poultry.feed-records.index', compact('batch', 'records'));
+    }
+
+    public function create(Batch $batch)
+    {
+        Gate::authorize('create', FeedRecord::class);
+        $inventoryItems = InventoryItem::where('category', 'feed')->where('is_active', true)->get();
+        return view('sectors.poultry.feed-records.create', compact('batch', 'inventoryItems'));
+    }
+
+    public function store(FeedRecordRequest $request)
+    {
+        Gate::authorize('create', FeedRecord::class);
+
+        $data = $request->validated();
+        $data['recorded_by_id'] = auth()->id();
+
+        // Auto-calculate costs from inventory item
+        $item = InventoryItem::findOrFail($data['inventory_item_id']);
+        $data['feed_cost_per_kg'] = $item->cost_per_unit;
+        $data['total_feed_cost'] = $data['feed_used'] * $item->cost_per_unit;
+        $data['feed_per_bird'] = 0; // will be calculated in observer or on save
+
+        $record = FeedRecord::create($data);
+        // The observer will create inventory consumption and update batch metrics
+
+        return redirect()->route('poultry.batches.show', $record->batch)
+            ->with('success', 'Feed record saved. Inventory updated.');
+    }
+
+    public function edit(FeedRecord $feedRecord)
+    {
+        Gate::authorize('update', $feedRecord);
+        $inventoryItems = InventoryItem::where('category', 'feed')->where('is_active', true)->get();
+        return view('sectors.poultry.feed-records.edit', compact('feedRecord', 'inventoryItems'));
+    }
+
+    public function update(FeedRecordRequest $request, FeedRecord $feedRecord)
+    {
+        Gate::authorize('update', $feedRecord);
+
+        $data = $request->validated();
+        // Recalculate costs
+        $item = InventoryItem::findOrFail($data['inventory_item_id']);
+        $data['feed_cost_per_kg'] = $item->cost_per_unit;
+        $data['total_feed_cost'] = $data['feed_used'] * $item->cost_per_unit;
+
+        $feedRecord->update($data);
+        $feedRecord->batch->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $feedRecord->batch)
+            ->with('success', 'Feed record updated.');
+    }
+
+    public function destroy(FeedRecord $feedRecord)
+    {
+        Gate::authorize('delete', $feedRecord);
+
+        $batch = $feedRecord->batch;
+        $feedRecord->delete();
+        $batch->updateCachedMetrics();
+
+        return redirect()->back()->with('success', 'Feed record deleted.');
+    }
+}
+
+app\Http\Controllers\Poultry\FlockRecordController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Poultry\FlockRecordRequest;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\FlockRecord;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class FlockRecordController extends Controller
+{
+    public function index(Batch $batch)
+    {
+        Gate::authorize('view', $batch);
+        $records = $batch->flockRecords()->with('recordedBy')->latest('date')->paginate(20);
+        return view('sectors.poultry.flock-records.index', compact('batch', 'records'));
+    }
+
+    public function create(Batch $batch)
+    {
+        Gate::authorize('create', FlockRecord::class);
+        return view('sectors.poultry.flock-records.create', compact('batch'));
+    }
+
+    public function store(FlockRecordRequest $request)
+    {
+        Gate::authorize('create', FlockRecord::class);
+
+        $data = $request->validated();
+        $data['recorded_by_id'] = auth()->id();
+
+        $record = FlockRecord::create($data);
+
+        // Update batch metrics
+        $record->batch->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $record->batch)
+            ->with('success', 'Flock record saved.');
+    }
+
+    public function edit(FlockRecord $flockRecord)
+    {
+        Gate::authorize('update', $flockRecord);
+        return view('sectors.poultry.flock-records.edit', compact('flockRecord'));
+    }
+
+    public function update(FlockRecordRequest $request, FlockRecord $flockRecord)
+    {
+        Gate::authorize('update', $flockRecord);
+
+        $flockRecord->update($request->validated());
+        $flockRecord->batch->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $flockRecord->batch)
+            ->with('success', 'Flock record updated.');
+    }
+
+    public function destroy(FlockRecord $flockRecord)
+    {
+        Gate::authorize('delete', $flockRecord);
+
+        $batch = $flockRecord->batch;
+        $flockRecord->delete();
+        $batch->updateCachedMetrics();
+
+        return redirect()->back()->with('success', 'Flock record deleted.');
+    }
+}
+
+app\Http\Controllers\Poultry\FormHubController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\FlockRecord;
+use App\Models\Poultry\WeightRecord;
+use App\Models\Poultry\FeedRecord;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class FormHubController extends Controller
+{
+    /**
+     * Display the form hub.
+     */
+    public function index(Request $request)
+    {
+        Gate::authorize('viewAny', Batch::class);
+
+        $activeBatches = Batch::where('status', 'active')->orderBy('created_at', 'desc')->get();
+
+        // Filter by batch if provided
+        if ($request->has('batch')) {
+            $activeBatches = $activeBatches->filter(function ($batch) use ($request) {
+                return $batch->batch_id == $request->batch;
+            });
+        }
+
+        // Get recent entries for the logged-in user (if staff)
+        $user = auth()->user();
+        $recentFlock = $user->role == 'staff' ? FlockRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get() : collect();
+        $recentWeight = $user->role == 'staff' ? WeightRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get() : collect();
+        $recentFeed = $user->role == 'staff' ? FeedRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get() : collect();
+
+        return view('sectors.poultry.forms.hub', compact('activeBatches', 'recentFlock', 'recentWeight', 'recentFeed'));
+    }
+}
+
+app\Http\Controllers\Poultry\InventoryController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Poultry\InventoryConsumptionRequest;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\InventoryConsumption;
+use App\Models\Poultry\InventoryItem;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class InventoryConsumptionController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     */
+    public function index(Request $request)
+    {
+        Gate::authorize('viewAny', InventoryConsumption::class);
+
+        $query = InventoryConsumption::with('inventoryItem', 'batch', 'recordedBy');
+
+        if ($request->has('inventory_item')) {
+            $query->where('inventory_item_id', $request->inventory_item);
+        }
+        if ($request->has('batch')) {
+            $query->where('poultry_batch_id', $request->batch);
+        }
+
+        $consumptions = $query->latest('date')->paginate(20);
+
+        $inventoryItems = InventoryItem::where('is_active', true)->get();
+        $batches = Batch::where('status', 'active')->get();
+
+        return view('sectors.poultry.inventory-consumptions.index', compact('consumptions', 'inventoryItems', 'batches'));
+    }
+
+    /**
+     * Show the form for creating a new consumption.
+     */
+    public function create(Request $request)
+    {
+        Gate::authorize('create', InventoryConsumption::class);
+
+        $inventoryItems = InventoryItem::where('is_active', true)->get();
+        $batches = Batch::where('status', 'active')->get();
+
+        $selectedItem = null;
+        if ($request->has('inventory_item')) {
+            $selectedItem = InventoryItem::find($request->inventory_item);
+        }
+
+        return view('sectors.poultry.forms.inventory-consumption', compact('inventoryItems', 'batches', 'selectedItem'));
+    }
+
+    /**
+     * Store a newly created consumption.
+     */
+    public function store(InventoryConsumptionRequest $request)
+    {
+        Gate::authorize('create', InventoryConsumption::class);
+
+        $data = $request->validated();
+        $data['recorded_by_id'] = auth()->id();
+
+        $consumption = InventoryConsumption::create($data);
+
+        // Update inventory stock (observer will also handle this, but we trigger explicitly)
+        $item = InventoryItem::find($data['inventory_item_id']);
+        $item->quantity_in_stock -= $data['quantity_used'];
+        $item->quantity_used += $data['quantity_used'];
+        $item->save();
+
+        // Update batch metrics if batch is linked
+        if ($data['poultry_batch_id'] ?? false) {
+            $batch = Batch::find($data['poultry_batch_id']);
+            $batch->updateCachedMetrics();
+        }
+
+        return redirect()->route('poultry.inventory.show', $data['inventory_item_id'])
+            ->with('success', 'Inventory consumption recorded.');
+    }
+
+    /**
+     * Remove the specified consumption.
+     */
+    public function destroy(InventoryConsumption $consumption)
+    {
+        Gate::authorize('delete', $consumption);
+
+        $itemId = $consumption->inventory_item_id;
+        $batchId = $consumption->poultry_batch_id;
+
+        // Restore stock
+        $item = InventoryItem::find($itemId);
+        if ($item) {
+            $item->quantity_in_stock += $consumption->quantity_used;
+            $item->quantity_used -= $consumption->quantity_used;
+            $item->save();
+        }
+
+        $consumption->delete();
+
+        if ($batchId) {
+            $batch = Batch::find($batchId);
+            if ($batch) {
+                $batch->updateCachedMetrics();
+            }
+        }
+
+        return redirect()->route('poultry.inventory.show', $itemId)
+            ->with('success', 'Consumption record deleted.');
+    }
+}
+
+app\Http\Controllers\Poultry\WeightRecordController.php:
+<?php
+
+namespace App\Http\Controllers\Poultry;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Poultry\WeightRecordRequest;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\WeightRecord;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class WeightRecordController extends Controller
+{
+    public function index(Batch $batch)
+    {
+        Gate::authorize('view', $batch);
+        $records = $batch->weightRecords()->with('recordedBy')->latest('date')->paginate(20);
+        return view('sectors.poultry.weight-records.index', compact('batch', 'records'));
+    }
+
+    public function create(Batch $batch)
+    {
+        Gate::authorize('create', WeightRecord::class);
+        $requiredSample = $batch->calculateRequiredSampleSize();
+        return view('sectors.poultry.weight-records.create', compact('batch', 'requiredSample'));
+    }
+
+    public function store(WeightRecordRequest $request)
+    {
+        Gate::authorize('create', WeightRecord::class);
+
+        $data = $request->validated();
+        $data['recorded_by_id'] = auth()->id();
+
+        $record = WeightRecord::create($data);
+        $record->calculateMetrics(); // defined in model?
+        $record->save();
+
+        $record->batch->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $record->batch)
+            ->with('success', 'Weight record saved.');
+    }
+
+    public function edit(WeightRecord $weightRecord)
+    {
+        Gate::authorize('update', $weightRecord);
+        return view('sectors.poultry.weight-records.edit', compact('weightRecord'));
+    }
+
+    public function update(WeightRecordRequest $request, WeightRecord $weightRecord)
+    {
+        Gate::authorize('update', $weightRecord);
+
+        $weightRecord->update($request->validated());
+        $weightRecord->calculateMetrics();
+        $weightRecord->save();
+        $weightRecord->batch->updateCachedMetrics();
+
+        return redirect()->route('poultry.batches.show', $weightRecord->batch)
+            ->with('success', 'Weight record updated.');
+    }
+
+        public function calculateMetrics(): void
+    {
+        $weights = $this->individual_weights ?? [];
+        if (empty($weights)) {
+            return;
+        }
+
+        $num = count($weights);
+        $this->birds_weighed = $num;
+        $this->total_weight = array_sum($weights);
+        $this->average_weight = $this->total_weight / $num;
+
+        // CV
+        $mean = $this->average_weight;
+        $variance = array_sum(array_map(fn($w) => ($w - $mean) ** 2, $weights)) / $num;
+        $stddev = sqrt($variance);
+        $cv = $mean > 0 ? ($stddev / $mean) * 100 : 0;
+        $this->coefficient_variation = round($cv, 2);
+
+        // CV status
+        if ($cv >= 15) {
+            $this->cv_status = 'rejected';
+            $this->is_valid_sample = false;
+        } elseif ($cv >= 12) {
+            $this->cv_status = 'warning';
+            $this->is_valid_sample = true;
+        } elseif ($cv >= 10) {
+            $this->cv_status = 'caution';
+            $this->is_valid_sample = true;
+        } else {
+            $this->cv_status = 'excellent';
+            $this->is_valid_sample = true;
+        }
+
+        // Expected weight (just a placeholder)
+        $this->expected_weight = $this->calculateExpectedWeight();
+    }
+
+    protected function calculateExpectedWeight(): float
+    {
+        // Simple growth curve placeholder
+        $age = $this->batch?->current_age_days ?? 0;
+        if ($age <= 0) return 0.045;
+        if ($age <= 7) return 0.18;
+        if ($age <= 14) return 0.45;
+        if ($age <= 21) return 0.85;
+        if ($age <= 28) return 1.30;
+        if ($age <= 35) return 1.80;
+        if ($age <= 42) return 2.20;
+        if ($age <= 49) return 2.50;
+        return 2.70;
+    }
+
+    public function destroy(WeightRecord $weightRecord)
+    {
+        Gate::authorize('delete', $weightRecord);
+
+        $batch = $weightRecord->batch;
+        $weightRecord->delete();
+        $batch->updateCachedMetrics();
+
+        return redirect()->back()->with('success', 'Weight record deleted.');
+    }
+}
+
+app\Http\Middleware\SectorSelected.php:
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class SectorSelected
+{
+    public function handle(Request $request, Closure $next)
+    {
+        if (!session()->has('selected_sector_id')) {
+            return redirect()->route('sectors.index');
+        }
+
+        // Optionally, verify sector exists
+        $sector = \App\Models\Sector::find(session('selected_sector_id'));
+        if (!$sector) {
+            session()->forget(['selected_sector_id', 'selected_sector_slug']);
+            return redirect()->route('sectors.index');
+        }
+
+        return $next($request);
+    }
+}
+

@@ -1,0 +1,7 @@
+BWET Farms Audit – Bug Log
+=========================
+
+Study-only log. No code changes yet. Use this file to record confirmed mismatches, inconsistencies, and likely bugs discovered during the audit.
+
+Start of audit: 2026-08-14
+
