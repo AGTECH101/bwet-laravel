@@ -1,3 +1,6 @@
+======================================================================================================
+app folder
+======================================================================================================
 app\Helpers\helpers.php: 
 <?php
 
@@ -1888,3 +1891,3952 @@ class SectorSelected
     }
 }
 
+app\Http\Requests\Poultry\BatchRequest.php:
+<?php
+
+namespace App\Http\Requests\Poultry;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class BatchRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true; // handled by policies
+    }
+
+    public function rules(): array
+    {
+        return [
+            'batch_id' => 'nullable|string|max:20|unique:poultry_batches,batch_id,' . $this->route('batch'),
+            'name' => 'required|string|max:100',
+            'hatchery' => 'nullable|string|max:100',
+            'start_date' => 'required|date',
+            'starting_flock' => 'required|integer|min:1',
+            'phase' => 'required|in:brooding,batch',
+            'pen_id' => 'nullable|exists:pens,id',
+            'initial_chicken_cost' => 'nullable|numeric|min:0',
+            'status' => 'nullable|in:active,closed,completed',
+        ];
+    }
+}
+
+app\Http\Requests\Poultry\ExpenseRequest.php:
+<?php
+
+namespace App\Http\Requests\Poultry;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class ExpenseRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'poultry_batch_id' => 'nullable|exists:poultry_batches,id',
+            'date' => 'required|date',
+            'category' => 'required|in:medication,vaccination,labor,utilities,maintenance,transport,packaging,other',
+            'description' => 'required|string|max:255',
+            'amount' => 'required|numeric|min:0.01',
+            'receipt_number' => 'nullable|string|max:100',
+            'vendor' => 'nullable|string|max:100',
+        ];
+    }
+}
+
+app\Http\Requests\Poultry\FeedRecordRequest.php:
+<?php
+
+namespace App\Http\Requests\Poultry;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class FeedRecordRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'poultry_batch_id' => 'required|exists:poultry_batches,id',
+            'inventory_item_id' => 'required|exists:inventory_items,id',
+            'date' => 'required|date',
+            'feed_used' => 'required|numeric|min:0.001',
+        ];
+    }
+}
+
+app\Http\Requests\Poultry\FlockRecordRequest.php:
+<?php
+
+namespace App\Http\Requests\Poultry;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class FlockRecordRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true; // handled by policies
+    }
+
+    public function rules(): array
+    {
+        return [
+            'poultry_batch_id' => 'required|exists:poultry_batches,id',
+            'date' => 'required|date',
+            'mortality' => 'nullable|integer|min:0',
+            'culls' => 'nullable|integer',
+            'slaughter' => 'nullable|integer|min:0',
+            'notes' => 'nullable|string|max:1000',
+        ];
+    }
+}
+
+app\Http\Requests\Poultry\InventoryConsumptionRequest.php:
+<?php
+
+namespace App\Http\Requests\Poultry;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class InventoryConsumptionRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'inventory_item_id' => 'required|exists:inventory_items,id',
+            'poultry_batch_id' => 'nullable|exists:poultry_batches,id',
+            'quantity_used' => 'required|numeric|min:0.001',
+            'date' => 'required|date',
+        ];
+    }
+}
+
+app\Http\Requests\Poultry\InventoryItemRequest.php:
+<?php
+
+namespace App\Http\Requests\Poultry;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class InventoryItemRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'name' => 'required|string|max:100',
+            'category' => 'required|in:feed,vaccine,medicine,consumables,packaging,other',
+            'unit' => 'required|in:kg,g,l,ml,unit,bag,spoon,box',
+            'quantity_in_stock' => 'required|numeric|min:0',
+            'minimum_quantity' => 'nullable|numeric|min:0',
+            'vendor' => 'nullable|string|max:250',
+            'cost_per_unit' => 'required|numeric|min:0',
+            'is_active' => 'boolean',
+        ];
+    }
+}
+
+app\Http\Requests\Poultry\WeightRecordRequest.php:
+<?php
+
+namespace App\Http\Requests\Poultry;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class WeightRecordRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'poultry_batch_id' => 'required|exists:poultry_batches,id',
+            'date' => 'required|date',
+            'individual_weights' => 'required|array|min:1|max:10',
+            'individual_weights.*' => 'numeric|min:0.001|max:5',
+            'notes' => 'nullable|string|max:1000',
+        ];
+    }
+}
+
+app\Models\ExportHistory.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class ExportHistory extends Model
+{
+    protected $fillable = [
+        'user_id', 'export_format', 'batch_id', 'export_type',
+        'file_name', 'file_size', 'exported_at', 'expires_at'
+    ];
+
+    protected $casts = [
+        'exported_at' => 'datetime',
+        'expires_at' => 'datetime',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function batch()
+    {
+        return $this->belongsTo(Poultry\Batch::class);
+    }
+}
+
+app\Models\HistoryQuery.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class HistoryQuery extends Model
+{
+    protected $fillable = [
+        'name', 'query_type', 'date_from', 'date_to', 'user_filter_id',
+        'batch_filter_id', 'category_filter', 'min_amount', 'max_amount',
+        'result_count', 'last_executed', 'execution_time_ms',
+        'created_by_id', 'is_shared'
+    ];
+
+    protected $casts = [
+        'date_from' => 'date',
+        'date_to' => 'date',
+        'last_executed' => 'datetime',
+        'min_amount' => 'decimal:2',
+        'max_amount' => 'decimal:2',
+        'is_shared' => 'boolean',
+    ];
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function userFilter()
+    {
+        return $this->belongsTo(User::class, 'user_filter_id');
+    }
+
+    public function batchFilter()
+    {
+        return $this->belongsTo(Poultry\Batch::class, 'batch_filter_id');
+    }
+}
+
+app\Models\MarketPrice.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class MarketPrice extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'price_per_bird',
+        'price_per_kg',
+        'price_per_carton',
+        'effective_date',
+        'notes',
+        'is_active',
+        'set_by_id',
+    ];
+
+    protected $casts = [
+        'effective_date' => 'date',
+        'is_active' => 'boolean',
+        'price_per_bird' => 'decimal:2',
+        'price_per_kg' => 'decimal:2',
+        'price_per_carton' => 'decimal:2',
+    ];
+
+    public function setBy()
+    {
+        return $this->belongsTo(User::class, 'set_by_id');
+    }
+
+    public static function getCurrentPrices()
+    {
+        return static::where('is_active', true)->orderBy('effective_date', 'desc')->first();
+    }
+
+    public static function getPriceHistory($days = 30)
+    {
+        return static::where('effective_date', '>=', now()->subDays($days))
+            ->orderBy('effective_date', 'desc')
+            ->get();
+    }
+}
+
+app\Models\Notification.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Notification extends Model
+{
+    protected $fillable = [
+        'notification_type', 'title', 'message', 'batch_id',
+        'observation_report_id', 'is_active', 'created_by_id'
+    ];
+
+    protected $casts = ['is_active' => 'boolean'];
+
+    public function batch()
+    {
+        return $this->belongsTo(Poultry\Batch::class);
+    }
+
+    public function observationReport()
+    {
+        return $this->belongsTo(ObservationReport::class);
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function readStatuses()
+    {
+        return $this->hasMany(NotificationReadStatus::class);
+    }
+
+    public static function createGlobal(string $type, string $title, string $message, ?User $createdBy = null, ?Poultry\Batch $batch = null, ?ObservationReport $report = null)
+    {
+        $notification = static::create([
+            'notification_type' => $type,
+            'title' => $title,
+            'message' => $message,
+            'created_by_id' => $createdBy?->id,
+            'batch_id' => $batch?->id,
+            'observation_report_id' => $report?->id,
+        ]);
+
+        // Create read status for all approved users
+        $users = User::where('is_approved', true)->get();
+        foreach ($users as $user) {
+            NotificationReadStatus::create([
+                'user_id' => $user->id,
+                'notification_id' => $notification->id,
+                'is_read' => false,
+            ]);
+        }
+
+        return $notification;
+    }
+}
+
+app\Models\NotificationReadStatus.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class NotificationReadStatus extends Model
+{
+    protected $table = 'notification_read_statuses';
+
+    protected $fillable = ['user_id', 'notification_id', 'is_read', 'read_at'];
+
+    protected $casts = ['is_read' => 'boolean', 'read_at' => 'datetime'];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function notification()
+    {
+        return $this->belongsTo(Notification::class);
+    }
+}
+
+app\Models\ObservationCategory.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class ObservationCategory extends Model
+{
+    protected $fillable = ['name', 'description', 'is_active', 'created_by_id'];
+
+    protected $casts = ['is_active' => 'boolean'];
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function reports()
+    {
+        return $this->hasMany(ObservationReport::class, 'category_id');
+    }
+}
+
+app\Models\ObservationReport.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class ObservationReport extends Model
+{
+    protected $fillable = [
+        'title', 'category_id', 'other_category', 'description',
+        'affected_batch_ids', 'evidence_photos', 'status', 'priority',
+        'reported_by_id', 'reported_at', 'reviewed_by_id', 'reviewed_at',
+        'resolved_by_id', 'resolved_at', 'admin_response', 'actions_taken',
+        'is_archived', 'requires_follow_up', 'follow_up_date'
+    ];
+
+    protected $casts = [
+        'affected_batch_ids' => 'array',
+        'evidence_photos' => 'array',
+        'reported_at' => 'datetime',
+        'reviewed_at' => 'datetime',
+        'resolved_at' => 'datetime',
+        'follow_up_date' => 'date',
+        'is_archived' => 'boolean',
+        'requires_follow_up' => 'boolean',
+    ];
+
+    public function category()
+    {
+        return $this->belongsTo(ObservationCategory::class, 'category_id');
+    }
+
+    public function reportedBy()
+    {
+        return $this->belongsTo(User::class, 'reported_by_id');
+    }
+
+    public function reviewedBy()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by_id');
+    }
+
+    public function resolvedBy()
+    {
+        return $this->belongsTo(User::class, 'resolved_by_id');
+    }
+}
+
+app\Models\Sector.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Sector extends Model
+{
+    protected $fillable = [
+        'name', 'slug', 'description', 'cost', 'estimated_revenue',
+        'date_of_resumption', 'status', 'is_live'
+    ];
+
+    protected $casts = [
+        'is_live' => 'boolean',
+        'date_of_resumption' => 'date',
+    ];
+}
+
+app\Models\SystemVariable.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
+
+class SystemVariable extends Model
+{
+    protected $fillable = [
+        'name', 'key', 'category', 'value', 'data_type',
+        'description', 'is_active', 'updated_by_id',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
+    public function updatedBy()
+    {
+        return $this->belongsTo(User::class, 'updated_by_id');
+    }
+
+    public static function getValue(string $key, $default = null)
+    {
+        return Cache::remember("system_var_{$key}", 300, function () use ($key, $default) {
+            $var = static::where('key', $key)->where('is_active', true)->first();
+            if (!$var) {
+                return $default;
+            }
+            return match ($var->data_type) {
+                'integer' => (int) $var->value,
+                'decimal', 'percentage' => (float) $var->value,
+                'boolean' => filter_var($var->value, FILTER_VALIDATE_BOOLEAN),
+                default => $var->value,
+            };
+        });
+    }
+}
+
+app\Models\User.php:
+<?php
+
+namespace App\Models;
+
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Laravel\Fortify\TwoFactorAuthenticatable;
+use Spatie\Permission\Traits\HasRoles;
+
+class User extends Authenticatable
+{
+    use Notifiable, TwoFactorAuthenticatable, HasRoles;
+
+    protected $fillable = [
+        'name', 'email', 'password', 'role', 'phone', 'farm_location',
+        'is_approved', 'approved_by_id', 'approved_at'
+    ];
+
+    protected $hidden = ['password', 'remember_token', 'two_factor_recovery_codes', 'two_factor_secret'];
+
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'is_approved' => 'boolean',
+        'approved_at' => 'datetime',
+    ];
+
+    public static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($user) {
+            if ($user->role === 'admin') {
+                $user->is_approved = true;
+            }
+        });
+    }
+
+    public function approvedBy()
+    {
+        return $this->belongsTo(User::class, 'approved_by_id');
+    }
+
+    // Relationships to poultry models (if needed)
+    public function createdBatches()
+    {
+        return $this->hasMany(Poultry\Batch::class, 'created_by_id');
+    }
+}
+
+app\Models\Poultry\Batch.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\Sector;
+use App\Models\User;
+use App\Services\Poultry\BatchCalculationService;
+use App\Services\Poultry\BatchTriggerService;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Batch extends Model
+{
+    use HasFactory;
+
+    protected $table = 'poultry_batches';
+
+    protected $fillable = [
+        'batch_id', 'name', 'hatchery', 'start_date', 'starting_flock',
+        'remaining_flock', 'phase', 'pen_id', 'selling_price_per_kg',
+        'selling_price_per_carton', 'initial_chicken_cost', 'status',
+        'closed_at', 'current_age_days', 'total_mortality', 'total_culls',
+        'total_slaughter', 'total_feed_used', 'bags_consumed',
+        'total_weight_gain', 'current_ifcr', 'current_cfcr',
+        'current_marginal_profit_percent', 'total_expenses',
+        'cost_allocated_so_far', 'peak_profit', 'profit_margin_used',
+        'stop_loss_used_percent', 'is_manual_mode', 'manual_mode_reason',
+        'manual_mode_enabled_by_id', 'manual_mode_enabled_at',
+        'created_by_id', 'sector_id'
+    ];
+
+    protected $casts = [
+        'start_date' => 'date',
+        'closed_at' => 'datetime',
+        'manual_mode_enabled_at' => 'datetime',
+        'is_manual_mode' => 'boolean',
+        'selling_price_per_kg' => 'decimal:2',
+        'selling_price_per_carton' => 'decimal:2',
+        'initial_chicken_cost' => 'decimal:2',
+        'total_feed_used' => 'decimal:3',
+        'bags_consumed' => 'decimal:2',
+        'total_weight_gain' => 'decimal:3',
+        'current_ifcr' => 'decimal:4',
+        'current_cfcr' => 'decimal:4',
+        'current_marginal_profit_percent' => 'decimal:2',
+        'total_expenses' => 'decimal:2',
+        'cost_allocated_so_far' => 'decimal:2',
+        'peak_profit' => 'decimal:2',
+        'profit_margin_used' => 'decimal:2',
+        'stop_loss_used_percent' => 'decimal:2',
+    ];
+
+    // Relationships
+    public function sector()
+    {
+        return $this->belongsTo(Sector::class);
+    }
+
+    public function pen()
+    {
+        return $this->belongsTo(Pen::class);
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function manualModeEnabledBy()
+    {
+        return $this->belongsTo(User::class, 'manual_mode_enabled_by_id');
+    }
+
+    public function flockRecords()
+    {
+        return $this->hasMany(FlockRecord::class, 'poultry_batch_id');
+    }
+
+    public function weightRecords()
+    {
+        return $this->hasMany(WeightRecord::class, 'poultry_batch_id');
+    }
+
+    public function feedRecords()
+    {
+        return $this->hasMany(FeedRecord::class, 'poultry_batch_id');
+    }
+
+    public function expenses()
+    {
+        return $this->hasMany(Expense::class, 'poultry_batch_id');
+    }
+
+    public function inventoryConsumptions()
+    {
+        return $this->hasMany(InventoryConsumption::class, 'poultry_batch_id');
+    }
+
+    public function weighingSchedules()
+    {
+        return $this->hasMany(WeighingSchedule::class, 'poultry_batch_id');
+    }
+
+    public function performanceMetrics()
+    {
+        return $this->hasMany(PerformanceMetric::class, 'poultry_batch_id');
+    }
+
+    public function investorInvestments()
+    {
+        return $this->hasMany(InvestorInvestment::class, 'poultry_batch_id');
+    }
+
+    // Business logic delegates to services
+    public function calculateRequiredSampleSize(): int
+    {
+        return BatchCalculationService::calculateRequiredSampleSize($this->remaining_flock);
+    }
+
+    public function getCurrentAverageWeight(): float
+    {
+        return BatchCalculationService::getCurrentAverageWeight($this);
+    }
+
+    public function getDressedWeightPerBird(): float
+    {
+        return BatchCalculationService::getDressedWeightPerBird($this);
+    }
+
+    public function getCostPerBird(): float
+    {
+        return BatchCalculationService::getCostPerBird($this);
+    }
+
+    public function getCostPerKg(): float
+    {
+        return BatchCalculationService::getCostPerKg($this);
+    }
+
+    public function getSellingPricePerBird(): float
+    {
+        return BatchCalculationService::getSellingPricePerBird($this);
+    }
+
+    public function getCalculatedSellingPricePerKg(): float
+    {
+        return BatchCalculationService::getCalculatedSellingPricePerKg($this);
+    }
+
+    public function getFinancialMetrics(): array
+    {
+        return BatchCalculationService::getFinancialMetrics($this);
+    }
+
+    public function checkSlaughterTriggers(): array
+    {
+        return BatchTriggerService::checkSlaughterTriggers($this);
+    }
+
+    public function allocateCostForSlaughter(int $numberSlaughtered, ?int $oldRemaining = null, ?float $oldTotalInvestment = null): float
+    {
+        return BatchCalculationService::allocateCostForSlaughter($this, $numberSlaughtered, $oldRemaining, $oldTotalInvestment);
+    }
+
+    public function updateCachedMetrics()
+    {
+        BatchCalculationService::updateCachedMetrics($this);
+    }
+}
+
+app\Models\Poultry\Expense.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Expense extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'poultry_batch_id', 'date', 'category', 'description', 'amount',
+        'receipt_number', 'vendor', 'recorded_by_id'
+    ];
+
+    protected $casts = [
+        'date' => 'date',
+        'amount' => 'decimal:2',
+    ];
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+
+    public function recordedBy()
+    {
+        return $this->belongsTo(User::class, 'recorded_by_id');
+    }
+}
+
+app\Models\Poultry\FeedRecord.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class FeedRecord extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'poultry_batch_id', 'inventory_item_id', 'date', 'feed_used',
+        'feed_cost_per_kg', 'total_feed_cost', 'feed_per_bird',
+        'recorded_by_id'
+    ];
+
+    protected $casts = [
+        'date' => 'date',
+        'feed_used' => 'decimal:3',
+        'feed_cost_per_kg' => 'decimal:2',
+        'total_feed_cost' => 'decimal:2',
+        'feed_per_bird' => 'decimal:3',
+    ];
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+
+    public function inventoryItem()
+    {
+        return $this->belongsTo(InventoryItem::class);
+    }
+
+    public function recordedBy()
+    {
+        return $this->belongsTo(User::class, 'recorded_by_id');
+    }
+}
+
+app\Models\Poultry\FlockRecord.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class FlockRecord extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'poultry_batch_id', 'date', 'mortality', 'culls', 'slaughter',
+        'notes', 'recorded_by_id'
+    ];
+
+    protected $casts = [
+        'date' => 'date',
+    ];
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+
+    public function recordedBy()
+    {
+        return $this->belongsTo(User::class, 'recorded_by_id');
+    }
+}
+
+app\Models\Poultry\InventoryConsumption.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class InventoryConsumption extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'inventory_item_id', 'poultry_batch_id', 'quantity_used', 'date',
+        'unit_cost_at_time', 'total_cost', 'source_type', 'source_id',
+        'recorded_by_id'
+    ];
+
+    protected $casts = [
+        'date' => 'date',
+        'quantity_used' => 'decimal:3',
+        'unit_cost_at_time' => 'decimal:2',
+        'total_cost' => 'decimal:2',
+    ];
+
+    public function inventoryItem()
+    {
+        return $this->belongsTo(InventoryItem::class);
+    }
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+
+    public function recordedBy()
+    {
+        return $this->belongsTo(User::class, 'recorded_by_id');
+    }
+}
+
+app\Models\Poultry\InventoryItem.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class InventoryItem extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name', 'category', 'unit', 'quantity_in_stock', 'quantity_used',
+        'minimum_quantity', 'vendor', 'cost_per_unit', 'is_active',
+        'status', 'killed_reason', 'killed_by_id', 'killed_at',
+        'created_by_id'
+    ];
+
+    protected $casts = [
+        'quantity_in_stock' => 'decimal:3',
+        'quantity_used' => 'decimal:3',
+        'minimum_quantity' => 'decimal:3',
+        'cost_per_unit' => 'decimal:2',
+        'is_active' => 'boolean',
+        'killed_at' => 'datetime',
+    ];
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function killedBy()
+    {
+        return $this->belongsTo(User::class, 'killed_by_id');
+    }
+
+    public function consumptions()
+    {
+        return $this->hasMany(InventoryConsumption::class);
+    }
+
+    // Helpers
+    public function isLowStock(): bool
+    {
+        return $this->quantity_in_stock <= $this->minimum_quantity;
+    }
+
+    public function isOutOfStock(): bool
+    {
+        return $this->quantity_in_stock <= 0;
+    }
+
+    public function getTotalValue(): float
+    {
+        return $this->quantity_in_stock * $this->cost_per_unit;
+    }
+
+    public function kill(User $user, ?string $reason = null)
+    {
+        $this->status = 'killed';
+        $this->killed_by_id = $user->id;
+        $this->killed_at = now();
+        $this->killed_reason = $reason;
+        $this->save();
+    }
+}
+
+app\Models\Poultry\InvestorInvestment.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class InvestorInvestment extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'investor_id', 'poultry_batch_id', 'amount_invested',
+        'investment_date', 'batch_total_cost_at_investment',
+        'investment_percentage', 'is_active'
+    ];
+
+    protected $casts = [
+        'investment_date' => 'date',
+        'amount_invested' => 'decimal:2',
+        'batch_total_cost_at_investment' => 'decimal:2',
+        'investment_percentage' => 'decimal:4',
+        'is_active' => 'boolean',
+    ];
+
+    public function investor()
+    {
+        return $this->belongsTo(User::class, 'investor_id');
+    }
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+}
+
+app\Models\Poultry\Pen.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Pen extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name', 'pen_code', 'pen_type', 'capacity', 'is_active',
+        'notes', 'current_batch_id', 'created_by_id'
+    ];
+
+    protected $casts = ['is_active' => 'boolean'];
+
+    public function currentBatch()
+    {
+        return $this->belongsTo(Batch::class, 'current_batch_id');
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    // Scopes
+    public function scopeAvailable($query)
+    {
+        return $query->where('is_active', true)
+            ->where(function ($q) {
+                $q->whereNull('current_batch_id')
+                  ->orWhereHas('currentBatch', function ($sq) {
+                      $sq->whereIn('status', ['closed', 'completed']);
+                  });
+            });
+    }
+}
+
+app\Models\Poultry\PerformanceMetric.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class PerformanceMetric extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'poultry_batch_id', 'date', 'age_days', 'average_weight',
+        'daily_feed', 'cumulative_feed', 'ifcr', 'cfcr',
+        'marginal_profit_percent', 'adg'
+    ];
+
+    protected $casts = [
+        'date' => 'date',
+        'average_weight' => 'decimal:3',
+        'daily_feed' => 'decimal:3',
+        'cumulative_feed' => 'decimal:3',
+        'ifcr' => 'decimal:4',
+        'cfcr' => 'decimal:4',
+        'marginal_profit_percent' => 'decimal:2',
+        'adg' => 'decimal:4',
+    ];
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+
+    public static function updateOrCreateForBatch(Batch $batch, ?string $date = null)
+    {
+        $date = $date ?? now()->toDateString();
+        $ageDays = $batch->start_date->diffInDays($date);
+
+        $latestWeight = $batch->weightRecords()->where('date', '<=', $date)->latest('date')->first();
+        $averageWeight = $latestWeight ? $latestWeight->average_weight : 0;
+
+        $dailyFeed = $batch->feedRecords()->where('date', $date)->sum('feed_used') ?? 0;
+        $cumulativeFeed = $batch->feedRecords()->where('date', '<=', $date)->sum('feed_used') ?? 0;
+
+        $ifcr = $batch->current_ifcr;
+        $cfcr = $batch->current_cfcr;
+        $profit = $batch->current_marginal_profit_percent;
+
+        // ADG calculation
+        $adg = null;
+        if ($latestWeight) {
+            $prevWeight = $batch->weightRecords()->where('date', '<', $date)->latest('date')->first();
+            if ($prevWeight && $prevWeight->date != $latestWeight->date) {
+                $daysDiff = $latestWeight->date->diffInDays($prevWeight->date);
+                if ($daysDiff > 0) {
+                    $adg = ($latestWeight->average_weight - $prevWeight->average_weight) / $daysDiff;
+                }
+            }
+        }
+
+        return static::updateOrCreate(
+            ['poultry_batch_id' => $batch->id, 'date' => $date],
+            [
+                'age_days' => $ageDays,
+                'average_weight' => $averageWeight,
+                'daily_feed' => $dailyFeed,
+                'cumulative_feed' => $cumulativeFeed,
+                'ifcr' => $ifcr,
+                'cfcr' => $cfcr,
+                'marginal_profit_percent' => $profit,
+                'adg' => $adg,
+            ]
+        );
+    }
+}
+
+app\Models\Poultry\WeighingSchedule.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class WeighingSchedule extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'poultry_batch_id', 'scheduled_date', 'is_completed',
+        'completed_at', 'admin_notified_missed'
+    ];
+
+    protected $casts = [
+        'scheduled_date' => 'date',
+        'completed_at' => 'datetime',
+        'is_completed' => 'boolean',
+        'admin_notified_missed' => 'boolean',
+    ];
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+
+    public static function generateForBatch(Batch $batch, ?int $frequency = null)
+    {
+        $frequency = $frequency ?? (int) \App\Models\SystemVariable::getValue('weighing_frequency_days', 4);
+        $schedules = [];
+        $currentDate = $batch->start_date->copy();
+
+        if ($batch->phase === 'brooding') {
+            for ($week = 1; $week <= 2; $week++) {
+                $date = $batch->start_date->copy()->addDays($week * 7);
+                $schedules[] = new static(['scheduled_date' => $date]);
+            }
+        } else {
+            for ($i = 1; $i <= 20; $i++) {
+                $date = $batch->start_date->copy()->addDays($frequency * $i);
+                $schedules[] = new static(['scheduled_date' => $date]);
+            }
+        }
+
+        return $batch->weighingSchedules()->saveMany($schedules);
+    }
+}
+
+app\Models\Poultry\WeightRecord.php:
+<?php
+
+namespace App\Models\Poultry;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class WeightRecord extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'poultry_batch_id', 'date', 'individual_weights', 'birds_weighed',
+        'total_weight', 'average_weight', 'coefficient_variation',
+        'cv_status', 'is_valid_sample', 'expected_weight', 'notes',
+        'recorded_by_id'
+    ];
+
+    protected $casts = [
+        'date' => 'date',
+        'individual_weights' => 'array',
+        'total_weight' => 'decimal:3',
+        'average_weight' => 'decimal:3',
+        'coefficient_variation' => 'decimal:2',
+        'expected_weight' => 'decimal:3',
+        'is_valid_sample' => 'boolean',
+    ];
+
+    public function batch()
+    {
+        return $this->belongsTo(Batch::class, 'poultry_batch_id');
+    }
+
+    public function recordedBy()
+    {
+        return $this->belongsTo(User::class, 'recorded_by_id');
+    }
+}
+
+app\Observers\Poultry\BatchObserver.php:
+<?php
+
+namespace App\Observers\Poultry;
+
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\Pen;
+use App\Models\Poultry\WeighingSchedule;
+
+class BatchObserver
+{
+    /**
+     * Handle the Batch "created" event.
+     */
+    public function created(Batch $batch): void
+    {
+        // Generate weighing schedule for the new batch
+        WeighingSchedule::generateForBatch($batch);
+    }
+
+    /**
+     * Handle the Batch "updated" event.
+     */
+    public function updated(Batch $batch): void
+    {
+        // If batch status changes from active to closed/completed, release the pen
+        if ($batch->wasChanged('status') && $batch->status !== 'active') {
+            $originalStatus = $batch->getOriginal('status');
+            if ($originalStatus === 'active') {
+                $this->releasePen($batch);
+            }
+        }
+
+        // If pen was changed manually, ensure old pen is released
+        if ($batch->wasChanged('pen_id')) {
+            $oldPenId = $batch->getOriginal('pen_id');
+            if ($oldPenId) {
+                $oldPen = Pen::find($oldPenId);
+                if ($oldPen && $oldPen->current_batch_id === $batch->id) {
+                    $oldPen->vacate();
+                }
+            }
+        }
+
+        // Auto-update metrics when relevant fields change
+        $dirtyFields = $batch->getDirty();
+        $relevantFields = ['starting_flock', 'remaining_flock', 'status', 'phase', 'pen_id'];
+        if (array_intersect(array_keys($dirtyFields), $relevantFields)) {
+            $batch->updateCachedMetrics();
+        }
+    }
+
+    /**
+     * Handle the Batch "deleted" event.
+     */
+    public function deleted(Batch $batch): void
+    {
+        // Release the pen if occupied
+        $this->releasePen($batch);
+    }
+
+    /**
+     * Release the pen assigned to this batch.
+     */
+    private function releasePen(Batch $batch): void
+    {
+        if ($batch->pen) {
+            $batch->pen->vacate();
+            // Nullify pen_id on batch to keep consistency
+            $batch->pen_id = null;
+            $batch->saveQuietly(); // Avoid recursion
+        }
+    }
+}
+
+app\Observers\Poultry\FeedRecordObserver.php:
+<?php
+
+namespace App\Observers\Poultry;
+
+use App\Models\Poultry\FeedRecord;
+use App\Models\Poultry\InventoryConsumption;
+
+class FeedRecordObserver
+{
+    public function created(FeedRecord $feedRecord)
+    {
+        if (!$feedRecord->inventory_item_id) {
+            return;
+        }
+
+        InventoryConsumption::create([
+            'inventory_item_id' => $feedRecord->inventory_item_id,
+            'poultry_batch_id' => $feedRecord->poultry_batch_id,
+            'quantity_used' => $feedRecord->feed_used,
+            'date' => $feedRecord->date,
+            'recorded_by_id' => $feedRecord->recorded_by_id,
+            'source_type' => 'feed',
+            'source_id' => $feedRecord->id,
+            'unit_cost_at_time' => $feedRecord->inventoryItem->cost_per_unit,
+            'total_cost' => $feedRecord->feed_used * $feedRecord->inventoryItem->cost_per_unit,
+        ]);
+    }
+
+    public function deleted(FeedRecord $feedRecord)
+    {
+        if (!$feedRecord->inventory_item_id) {
+            return;
+        }
+
+        InventoryConsumption::where('source_type', 'feed')
+            ->where('source_id', $feedRecord->id)
+            ->delete();
+    }
+}
+
+app\Observers\Poultry\InventoryConsumptionObserver.php:
+<?php
+
+namespace App\Observers\Poultry;
+
+use App\Models\Poultry\InventoryConsumption;
+use Illuminate\Support\Facades\DB;
+
+class InventoryConsumptionObserver
+{
+    public function created(InventoryConsumption $consumption)
+    {
+        // Update inventory stock atomically
+        DB::table('inventory_items')
+            ->where('id', $consumption->inventory_item_id)
+            ->update([
+                'quantity_in_stock' => DB::raw("quantity_in_stock - {$consumption->quantity_used}"),
+                'quantity_used' => DB::raw("quantity_used + {$consumption->quantity_used}"),
+                'updated_at' => now(),
+            ]);
+
+        // Update batch metrics if batch is linked
+        if ($consumption->poultry_batch_id) {
+            $consumption->batch->updateCachedMetrics();
+        }
+    }
+
+    public function deleted(InventoryConsumption $consumption)
+    {
+        // Restore stock
+        DB::table('inventory_items')
+            ->where('id', $consumption->inventory_item_id)
+            ->update([
+                'quantity_in_stock' => DB::raw("quantity_in_stock + {$consumption->quantity_used}"),
+                'quantity_used' => DB::raw("quantity_used - {$consumption->quantity_used}"),
+                'updated_at' => now(),
+            ]);
+
+        if ($consumption->poultry_batch_id) {
+            $consumption->batch->updateCachedMetrics();
+        }
+    }
+}
+
+app\Providers\AppServiceProvider.php:
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Support\ServiceProvider;
+use Laravel\Fortify\Contracts\LoginViewResponse;
+use Laravel\Fortify\Http\Responses\SimpleViewResponse;
+
+class AppServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        //
+
+        $this->app->bind(LoginViewResponse::class, function () {
+                return new SimpleViewResponse('auth.login'); // or 'auth.login' if you've copied views there
+        });
+    }
+    
+
+    public function boot(): void
+    {
+        // Observers can be registered here instead, but we use EventServiceProvider above.
+    }
+}
+
+app\Providers\AuthServiceProvider.php:
+use App\Models\Poultry\Batch;
+use App\Models\ObservationReport;
+use App\Models\SystemVariable;
+use App\Models\MarketPrice;
+
+// In boot method
+Gate::define('manage-system-variables', function ($user) {
+    return $user->role === 'admin';
+});
+
+Gate::define('manage-market-prices', function ($user) {
+    return $user->role === 'admin';
+});
+
+Gate::define('manage-users', function ($user) {
+    return $user->role === 'admin';
+});
+
+app\Providers\EventServiceProvider.php:
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Auth\Events\Registered;
+use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
+use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
+use Illuminate\Support\Facades\Event;
+
+class EventServiceProvider extends ServiceProvider
+{
+    protected $listen = [
+        Registered::class => [
+            SendEmailVerificationNotification::class,
+        ],
+    ];
+
+    protected $observers = [
+        \App\Models\Poultry\InventoryConsumption::class => [
+            \App\Observers\Poultry\InventoryConsumptionObserver::class,
+        ],
+        \App\Models\Poultry\FeedRecord::class => [
+            \App\Observers\Poultry\FeedRecordObserver::class,
+        ],
+        \App\Models\Poultry\Batch::class => [
+            \App\Observers\Poultry\BatchObserver::class,
+        ],
+    ];
+
+    public function boot(): void
+    {
+        parent::boot();
+    }
+}
+
+app\Providers\FortifyServiceProvider.php:
+<?php
+
+namespace App\Providers;
+
+use App\Actions\Fortify\CreateNewUser;
+use App\Actions\Fortify\ResetUserPassword;
+use App\Actions\Fortify\UpdateUserPassword;
+use App\Actions\Fortify\UpdateUserProfileInformation;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
+use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
+use Laravel\Fortify\Fortify;
+
+class FortifyServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        //
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        Fortify::createUsersUsing(CreateNewUser::class);
+        Fortify::updateUserProfileInformationUsing(UpdateUserProfileInformation::class);
+        Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
+        Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
+        Fortify::redirectUserForTwoFactorAuthenticationUsing(RedirectIfTwoFactorAuthenticatable::class);
+
+        RateLimiter::for('login', function (Request $request) {
+            $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
+
+            return Limit::perMinute(5)->by($throttleKey);
+        });
+
+        RateLimiter::for('two-factor', function (Request $request) {
+            return Limit::perMinute(5)->by($request->session()->get('login.id'));
+        });
+
+        RateLimiter::for('passkeys', function (Request $request) {
+            $credentialId = $request->input('credential.id');
+
+            return Limit::perMinute(10)->by(
+                ($credentialId ?: $request->session()->getId()).'|'.$request->ip()
+            );
+        });
+    }
+}
+
+app\Services\HistoryQueryService.php:
+<?php
+
+namespace App\Services;
+
+use App\Models\Poultry\Batch;
+use App\Models\User;
+use App\Models\Expense;
+use App\Models\Poultry\FeedRecord;
+use App\Models\Poultry\WeightRecord;
+use App\Models\Poultry\FlockRecord;
+use App\Models\ObservationReport;
+use App\Models\Poultry\InventoryItem;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
+class HistoryQueryService
+{
+    public static function execute(array $filters): array
+    {
+        $start = microtime(true);
+
+        $queryType = $filters['query_type'];
+        $results = [];
+
+        switch ($queryType) {
+            case 'expenses':
+                $results = self::queryExpenses($filters);
+                break;
+            case 'feed':
+                $results = self::queryFeed($filters);
+                break;
+            case 'weight':
+                $results = self::queryWeights($filters);
+                break;
+            case 'flock':
+                $results = self::queryFlock($filters);
+                break;
+            case 'observations':
+                $results = self::queryObservations($filters);
+                break;
+            case 'inventory':
+                $results = self::queryInventory($filters);
+                break;
+            case 'all':
+                $results = self::queryAll($filters);
+                break;
+            default:
+                $results = [];
+        }
+
+        $executionTime = (microtime(true) - $start) * 1000;
+
+        return [
+            'results' => $results,
+            'count' => count($results),
+            'execution_time_ms' => (int) $executionTime,
+            'summary' => self::generateSummary($results),
+        ];
+    }
+
+    private static function queryExpenses(array $filters): array
+    {
+        $query = \App\Models\Poultry\Expense::with('batch', 'recordedBy');
+
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('date', '>=', $filters['date_from']);
+        }
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('date', '<=', $filters['date_to']);
+        }
+        if (!empty($filters['user_filter'])) {
+            $query->where('recorded_by_id', $filters['user_filter']);
+        }
+        if (!empty($filters['batch_filter'])) {
+            $query->where('poultry_batch_id', $filters['batch_filter']);
+        }
+        if (!empty($filters['category_filter'])) {
+            $query->where('category', $filters['category_filter']);
+        }
+        if (!empty($filters['min_amount'])) {
+            $query->where('amount', '>=', $filters['min_amount']);
+        }
+        if (!empty($filters['max_amount'])) {
+            $query->where('amount', '<=', $filters['max_amount']);
+        }
+
+        return $query->latest('date')->get()->map(function ($exp) {
+            return [
+                'type' => 'expense',
+                'date' => $exp->date->toDateString(),
+                'description' => "Expense: {$exp->description}",
+                'amount' => $exp->amount,
+                'user' => $exp->recordedBy?->name ?? 'Unknown',
+                'batch' => $exp->batch?->batch_id ?? null,
+                'category' => $exp->category,
+                'receipt_number' => $exp->receipt_number,
+                'vendor' => $exp->vendor,
+            ];
+        })->toArray();
+    }
+
+    private static function queryFeed(array $filters): array
+    {
+        $query = FeedRecord::with('batch', 'recordedBy', 'inventoryItem');
+
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('date', '>=', $filters['date_from']);
+        }
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('date', '<=', $filters['date_to']);
+        }
+        if (!empty($filters['user_filter'])) {
+            $query->where('recorded_by_id', $filters['user_filter']);
+        }
+        if (!empty($filters['batch_filter'])) {
+            $query->where('poultry_batch_id', $filters['batch_filter']);
+        }
+
+        return $query->latest('date')->get()->map(function ($record) {
+            return [
+                'type' => 'feed',
+                'date' => $record->date->toDateString(),
+                'description' => "Feed: {$record->feed_used}kg of " . ($record->inventoryItem?->name ?? 'Unknown'),
+                'amount' => $record->total_feed_cost,
+                'user' => $record->recordedBy?->name ?? 'Unknown',
+                'batch' => $record->batch?->batch_id ?? null,
+            ];
+        })->toArray();
+    }
+
+    private static function queryWeights(array $filters): array
+    {
+        $query = WeightRecord::with('batch', 'recordedBy');
+
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('date', '>=', $filters['date_from']);
+        }
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('date', '<=', $filters['date_to']);
+        }
+        if (!empty($filters['user_filter'])) {
+            $query->where('recorded_by_id', $filters['user_filter']);
+        }
+        if (!empty($filters['batch_filter'])) {
+            $query->where('poultry_batch_id', $filters['batch_filter']);
+        }
+
+        return $query->latest('date')->get()->map(function ($record) {
+            return [
+                'type' => 'weight',
+                'date' => $record->date->toDateString(),
+                'description' => "Weight: {$record->average_weight}kg (CV: {$record->coefficient_variation}%)",
+                'amount' => null,
+                'user' => $record->recordedBy?->name ?? 'Unknown',
+                'batch' => $record->batch?->batch_id ?? null,
+            ];
+        })->toArray();
+    }
+
+    private static function queryFlock(array $filters): array
+    {
+        $query = FlockRecord::with('batch', 'recordedBy');
+
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('date', '>=', $filters['date_from']);
+        }
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('date', '<=', $filters['date_to']);
+        }
+        if (!empty($filters['user_filter'])) {
+            $query->where('recorded_by_id', $filters['user_filter']);
+        }
+        if (!empty($filters['batch_filter'])) {
+            $query->where('poultry_batch_id', $filters['batch_filter']);
+        }
+
+        return $query->latest('date')->get()->map(function ($record) {
+            return [
+                'type' => 'flock',
+                'date' => $record->date->toDateString(),
+                'description' => "Flock: M:{$record->mortality}, C:{$record->culls}, S:{$record->slaughter}",
+                'amount' => null,
+                'user' => $record->recordedBy?->name ?? 'Unknown',
+                'batch' => $record->batch?->batch_id ?? null,
+            ];
+        })->toArray();
+    }
+
+    private static function queryObservations(array $filters): array
+    {
+        $query = ObservationReport::with('reportedBy', 'category');
+
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('reported_at', '>=', $filters['date_from']);
+        }
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('reported_at', '<=', $filters['date_to']);
+        }
+        if (!empty($filters['user_filter'])) {
+            $query->where('reported_by_id', $filters['user_filter']);
+        }
+        if (!empty($filters['category_filter'])) {
+            $query->whereHas('category', fn($q) => $q->where('name', 'like', "%{$filters['category_filter']}%"));
+        }
+
+        return $query->latest('reported_at')->get()->map(function ($report) {
+            return [
+                'type' => 'observation',
+                'date' => $report->reported_at->toDateString(),
+                'description' => "Observation: {$report->title}",
+                'amount' => null,
+                'user' => $report->reportedBy?->name ?? 'Unknown',
+                'category' => $report->other_category ?? $report->category?->name,
+                'status' => $report->status,
+                'priority' => $report->priority,
+            ];
+        })->toArray();
+    }
+
+    private static function queryInventory(array $filters): array
+    {
+        $query = InventoryItem::with('createdBy');
+
+        if (!empty($filters['category_filter'])) {
+            $query->where('category', $filters['category_filter']);
+        }
+        if (!empty($filters['min_amount'])) {
+            $query->where('cost_per_unit', '>=', $filters['min_amount']);
+        }
+        if (!empty($filters['max_amount'])) {
+            $query->where('cost_per_unit', '<=', $filters['max_amount']);
+        }
+
+        return $query->latest('created_at')->get()->map(function ($item) {
+            return [
+                'type' => 'inventory',
+                'date' => $item->updated_at?->toDateString() ?? $item->created_at->toDateString(),
+                'description' => "Inventory: {$item->name} ({$item->category})",
+                'amount' => $item->getTotalValue(),
+                'user' => $item->createdBy?->name ?? 'System',
+                'category' => $item->category,
+                'quantity' => $item->quantity_in_stock,
+                'unit' => $item->unit,
+                'status' => $item->isLowStock() ? 'Low Stock' : ($item->isOutOfStock() ? 'Out of Stock' : 'In Stock'),
+            ];
+        })->toArray();
+    }
+
+    private static function queryAll(array $filters): array
+    {
+        $results = [];
+        $expenses = self::queryExpenses($filters);
+        $feed = self::queryFeed($filters);
+        $weights = self::queryWeights($filters);
+        $flock = self::queryFlock($filters);
+
+        $results = array_merge($expenses, $feed, $weights, $flock);
+
+        // Sort by date descending
+        usort($results, fn($a, $b) => strtotime($b['date']) - strtotime($a['date']));
+
+        return $results;
+    }
+
+    private static function generateSummary(array $results): array
+    {
+        $summary = [
+            'total_amount' => 0,
+            'avg_amount' => 0,
+            'type_counts' => [],
+            'date_range' => ['min' => null, 'max' => null],
+        ];
+
+        $amounts = [];
+        $dates = [];
+
+        foreach ($results as $row) {
+            $type = $row['type'] ?? 'unknown';
+            $summary['type_counts'][$type] = ($summary['type_counts'][$type] ?? 0) + 1;
+
+            if (!empty($row['date'])) {
+                $dates[] = $row['date'];
+            }
+
+            if (isset($row['amount']) && is_numeric($row['amount'])) {
+                $amounts[] = (float) $row['amount'];
+                $summary['total_amount'] += $row['amount'];
+            }
+        }
+
+        if (!empty($amounts)) {
+            $summary['avg_amount'] = $summary['total_amount'] / count($amounts);
+        }
+
+        if (!empty($dates)) {
+            $summary['date_range']['min'] = min($dates);
+            $summary['date_range']['max'] = max($dates);
+        }
+
+        return $summary;
+    }
+}
+
+app\Services\NotificationService.php:
+<?php
+
+namespace App\Services;
+
+use App\Models\Notification;
+use App\Models\NotificationReadStatus;
+use App\Models\User;
+
+class NotificationService
+{
+    public static function createGlobal(string $type, string $title, string $message, ?User $createdBy = null, ?\App\Models\Poultry\Batch $batch = null, ?\App\Models\ObservationReport $report = null)
+    {
+        return Notification::createGlobal($type, $title, $message, $createdBy, $batch, $report);
+    }
+
+    public static function getUserNotifications(User $user)
+    {
+        return NotificationReadStatus::with('notification')
+            ->where('user_id', $user->id)
+            ->whereHas('notification', fn($q) => $q->where('is_active', true))
+            ->orderByDesc('created_at')
+            ->get();
+    }
+
+    public static function markAsRead(User $user, int $notificationId): bool
+    {
+        $status = NotificationReadStatus::where('user_id', $user->id)
+            ->where('notification_id', $notificationId)
+            ->first();
+
+        if ($status && !$status->is_read) {
+            $status->update(['is_read' => true, 'read_at' => now()]);
+            return true;
+        }
+        return false;
+    }
+
+    public static function getUnreadCount(User $user): int
+    {
+        return NotificationReadStatus::where('user_id', $user->id)
+            ->where('is_read', false)
+            ->whereHas('notification', fn($q) => $q->where('is_active', true))
+            ->count();
+    }
+}
+
+app\Services\SystemService.php:
+<?php
+
+namespace App\Services;
+
+use App\Models\SystemVariable;
+use Illuminate\Support\Facades\Cache;
+
+class SystemService
+{
+    public static function initializeDefaultVariables()
+    {
+        $defaults = [
+            ['key' => 'profit_margin', 'name' => 'Profit Margin', 'value' => '20', 'data_type' => 'percentage', 'category' => 'financial'],
+            ['key' => 'dress_percentage', 'name' => 'Dress Percentage', 'value' => '75', 'data_type' => 'percentage', 'category' => 'financial'],
+            ['key' => 'weighing_frequency_days', 'name' => 'Weighing Frequency (Days)', 'value' => '4', 'data_type' => 'integer', 'category' => 'weighing'],
+            ['key' => 'daily_profit_tolerance', 'name' => 'Daily Profit Tolerance (%)', 'value' => '-15', 'data_type' => 'percentage', 'category' => 'performance'],
+            ['key' => 'fcr_efficiency_tolerance', 'name' => 'FCR Efficiency Tolerance (%)', 'value' => '20', 'data_type' => 'percentage', 'category' => 'performance'],
+            ['key' => 'stop_loss_amount', 'name' => 'Stop Loss Amount (₦)', 'value' => '20000', 'data_type' => 'decimal', 'category' => 'financial'],
+        ];
+
+        foreach ($defaults as $var) {
+            SystemVariable::firstOrCreate(
+                ['key' => $var['key']],
+                $var
+            );
+        }
+    }
+}
+
+app\Services\Poultry\BatchAnalyticsService.php:
+<?php
+
+namespace App\Services\Poultry;
+
+use App\Models\Poultry\Batch;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
+class BatchAnalyticsService
+{
+    public static function getBatchChartData(Batch $batch, int $days = 30): array
+    {
+        // Get weight records in date range
+        $endDate = Carbon::today();
+        $startDate = $endDate->copy()->subDays($days);
+
+        $weightRecords = $batch->weightRecords()
+            ->whereBetween('date', [$startDate, $endDate])
+            ->orderBy('date')
+            ->get();
+
+        if ($weightRecords->isEmpty()) {
+            return [
+                'ifcr_vs_cfcr' => ['labels' => [], 'ifcr' => [], 'cfcr' => []],
+                'adg_vs_age' => ['dates' => [], 'adg' => [], 'target_adg' => []],
+                'age_vs_weight' => ['ages' => [], 'weights' => []],
+                'mortality_trend' => ['dates' => [], 'mortality' => []],
+                'no_data' => true,
+            ];
+        }
+
+        $chartData = [
+            'ifcr_vs_cfcr' => ['labels' => [], 'ifcr' => [], 'cfcr' => []],
+            'adg_vs_age' => ['dates' => [], 'adg' => [], 'target_adg' => []],
+            'age_vs_weight' => ['ages' => [], 'weights' => []],
+            'mortality_trend' => ['dates' => [], 'mortality' => []],
+            'no_data' => false,
+        ];
+
+        $list = $weightRecords->values();
+
+        for ($i = 0; $i < $list->count(); $i++) {
+            $record = $list[$i];
+            $dateLabel = $record->date->format('m-d');
+            $age = (int) $record->date->diffInDays($batch->start_date);
+
+            // Age vs Weight
+            $chartData['age_vs_weight']['ages'][] = $age;
+            $chartData['age_vs_weight']['weights'][] = (float) $record->average_weight;
+
+            // FCR data
+            $cumulativeFeed = $batch->feedRecords()->where('date', '<=', $record->date)->sum('feed_used') ?? 0;
+            $cumulativeWeightGain = ($record->average_weight - 0.045) * $batch->remaining_flock;
+            $cfcr = $cumulativeWeightGain > 0 ? $cumulativeFeed / $cumulativeWeightGain : 0;
+
+            $chartData['ifcr_vs_cfcr']['labels'][] = $dateLabel;
+            $chartData['ifcr_vs_cfcr']['cfcr'][] = (float) $cfcr;
+
+            if ($i > 0) {
+                $prev = $list[$i - 1];
+                $daysBetween = $record->date->diffInDays($prev->date);
+                $weightGain = $record->average_weight - $prev->average_weight;
+                $feedInPeriod = $batch->feedRecords()->whereBetween('date', [$prev->date, $record->date])->sum('feed_used') ?? 0;
+                $ifcr = ($weightGain > 0 && $daysBetween > 0 && $batch->remaining_flock > 0)
+                    ? $feedInPeriod / ($weightGain * $batch->remaining_flock)
+                    : 0;
+                $chartData['ifcr_vs_cfcr']['ifcr'][] = (float) $ifcr;
+            } else {
+                // First record - use day 0
+                $daysFromStart = $age;
+                $weightGain = $record->average_weight - 0.045;
+                $feedFromStart = $batch->feedRecords()->where('date', '<=', $record->date)->sum('feed_used') ?? 0;
+                $ifcr = ($weightGain > 0 && $daysFromStart > 0 && $batch->remaining_flock > 0)
+                    ? $feedFromStart / ($weightGain * $batch->remaining_flock)
+                    : 0;
+                $chartData['ifcr_vs_cfcr']['ifcr'][] = (float) $ifcr;
+            }
+
+            // ADG
+            if ($i > 0) {
+                $prev = $list[$i - 1];
+                $daysBetween = $record->date->diffInDays($prev->date);
+                $adg = $daysBetween > 0 ? ($record->average_weight - $prev->average_weight) / $daysBetween : 0;
+            } else {
+                $adg = $age > 0 ? ($record->average_weight - 0.045) / $age : 0;
+            }
+            $chartData['adg_vs_age']['dates'][] = $dateLabel;
+            $chartData['adg_vs_age']['adg'][] = (float) $adg;
+            $chartData['adg_vs_age']['target_adg'][] = 0.065; // 65g/day
+
+            // Mortality
+            $mortalityToDate = $batch->flockRecords()->where('date', '<=', $record->date)->sum('mortality') ?? 0;
+            $mortalityRate = $batch->starting_flock > 0 ? ($mortalityToDate / $batch->starting_flock) * 100 : 0;
+            $chartData['mortality_trend']['dates'][] = $dateLabel;
+            $chartData['mortality_trend']['mortality'][] = (float) $mortalityRate;
+        }
+
+        return $chartData;
+    }
+}
+
+app\Services\Poultry\BatchCalculationService.php:
+<?php
+
+namespace App\Services\Poultry;
+
+use App\Models\Poultry\Batch;
+use App\Models\SystemVariable;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
+class BatchCalculationService
+{
+    public static function calculateRequiredSampleSize(int $remainingFlock): int
+    {
+        $tenPercent = $remainingFlock * 0.1;
+        $required = (int) ceil($tenPercent);
+        return min(max($required, 5), 10);
+    }
+
+    public static function getCurrentAverageWeight(Batch $batch): float
+    {
+        $lastWeight = $batch->weightRecords()->latest('date')->first();
+        if (!$lastWeight) return 0.0;
+
+        $daysSince = Carbon::today()->diffInDays($lastWeight->date);
+        $n = (int) SystemVariable::getValue('weighing_frequency_days', 4);
+
+        $weightNDaysAgo = $batch->weightRecords()
+            ->where('date', '<=', $lastWeight->date->copy()->subDays($n))
+            ->latest('date')
+            ->first();
+
+        if ($weightNDaysAgo) {
+            $recentWeight = $lastWeight->average_weight;
+            $weightNDaysAgoVal = $weightNDaysAgo->average_weight;
+            $actualDays = Carbon::parse($lastWeight->date)->diffInDays($weightNDaysAgo->date);
+            if ($actualDays > 0) {
+                $adg = ($recentWeight - $weightNDaysAgoVal) / $actualDays;
+                $interpolated = $recentWeight + ($adg * $daysSince);
+                return max(0, (float) $interpolated);
+            }
+        }
+        return (float) $lastWeight->average_weight;
+    }
+
+    public static function getDressedWeightPerBird(Batch $batch): float
+    {
+        $liveWeight = self::getCurrentAverageWeight($batch);
+        $dressPercentage = SystemVariable::getValue('dress_percentage', 75);
+        return $liveWeight * ($dressPercentage / 100);
+    }
+
+    public static function getCostPerBird(Batch $batch): float
+    {
+        $totalInvestment = self::calculateTotalInvestment($batch);
+        $unallocated = $totalInvestment - $batch->cost_allocated_so_far;
+        return $batch->remaining_flock > 0 ? $unallocated / $batch->remaining_flock : 0;
+    }
+
+    public static function getCostPerKg(Batch $batch): float
+    {
+        $costPerBird = self::getCostPerBird($batch);
+        $dressedWeight = self::getDressedWeightPerBird($batch);
+        return $dressedWeight > 0 ? $costPerBird / $dressedWeight : 0;
+    }
+
+    public static function getSellingPricePerBird(Batch $batch): float
+    {
+        $costPerBird = self::getCostPerBird($batch);
+        $profitMargin = SystemVariable::getValue('profit_margin', 20);
+        return $costPerBird * (1 + ($profitMargin / 100));
+    }
+
+    public static function getCalculatedSellingPricePerKg(Batch $batch): float
+    {
+        $sellingPricePerBird = self::getSellingPricePerBird($batch);
+        $dressedWeight = self::getDressedWeightPerBird($batch);
+        return $dressedWeight > 0 ? $sellingPricePerBird / $dressedWeight : 0;
+    }
+
+    public static function getFinancialMetrics(Batch $batch): array
+    {
+        $costPerBird = self::getCostPerBird($batch);
+        $costPerKg = self::getCostPerKg($batch);
+        $sellingPricePerBird = self::getSellingPricePerBird($batch);
+        $sellingPricePerKg = self::getCalculatedSellingPricePerKg($batch);
+        $sellingPricePerCarton = $sellingPricePerKg * 10;
+
+        return [
+            'cost_per_bird' => round($costPerBird, 2),
+            'cost_per_kg' => round($costPerKg, 2),
+            'selling_price_per_bird' => round($sellingPricePerBird, 2),
+            'selling_price_per_kg' => round($sellingPricePerKg, 2),
+            'selling_price_per_carton' => round($sellingPricePerCarton, 2),
+            'current_live_weight_kg' => round(self::getCurrentAverageWeight($batch), 3),
+            'current_dressed_weight_kg' => round(self::getDressedWeightPerBird($batch), 3),
+            'profit_margin_percent' => SystemVariable::getValue('profit_margin', 20),
+            'dress_percentage' => SystemVariable::getValue('dress_percentage', 75),
+            'remaining_flock' => $batch->remaining_flock,
+        ];
+    }
+
+    public static function calculateTotalInvestment(Batch $batch): float
+    {
+        $total = $batch->initial_chicken_cost;
+        $expenses = $batch->expenses()->sum('amount') ?? 0;
+        $consumptions = $batch->inventoryConsumptions()->sum('total_cost') ?? 0;
+        return (float) ($total + $expenses + $consumptions);
+    }
+
+    public static function allocateCostForSlaughter(Batch $batch, int $numberSlaughtered, ?int $oldRemaining = null, ?float $oldTotalInvestment = null): float
+    {
+        if ($numberSlaughtered <= 0) return 0;
+
+        $oldRemaining = $oldRemaining ?? $batch->remaining_flock;
+        $oldTotalInvestment = $oldTotalInvestment ?? self::calculateTotalInvestment($batch);
+
+        $unallocated = $oldTotalInvestment - $batch->cost_allocated_so_far;
+        if ($oldRemaining <= 0 || $unallocated <= 0) return 0;
+
+        $costPerBird = $unallocated / $oldRemaining;
+        $allocated = $costPerBird * $numberSlaughtered;
+
+        $batch->cost_allocated_so_far += $allocated;
+        if ($batch->cost_allocated_so_far > $oldTotalInvestment) {
+            $batch->cost_allocated_so_far = $oldTotalInvestment;
+        }
+        $batch->save();
+
+        return $allocated;
+    }
+
+    public static function updateCachedMetrics(Batch $batch)
+    {
+        DB::transaction(function () use ($batch) {
+            // Age
+            $batch->current_age_days = max(0, Carbon::today()->diffInDays($batch->start_date));
+
+            // Flock totals
+            $totals = $batch->flockRecords()
+                ->selectRaw('SUM(mortality) as total_mort, SUM(culls) as total_culls, SUM(slaughter) as total_slaughter')
+                ->first();
+
+            $batch->total_mortality = $totals->total_mort ?? 0;
+            $batch->total_culls = $totals->total_culls ?? 0;
+            $batch->total_slaughter = $totals->total_slaughter ?? 0;
+
+            $batch->remaining_flock = max(0, $batch->starting_flock - ($batch->total_mortality + $batch->total_culls + $batch->total_slaughter));
+
+            // Feed totals
+            $feedTotal = $batch->feedRecords()->sum('feed_used') ?? 0;
+            $batch->total_feed_used = (float) $feedTotal;
+            $batch->bags_consumed = $feedTotal > 0 ? $feedTotal / 25 : 0;
+
+            // Weight gain (using interpolation)
+            $batch->total_weight_gain = self::calculateTotalWeightGain($batch);
+
+            // FCRs
+            if ($batch->total_weight_gain > 0) {
+                $batch->current_cfcr = $batch->total_feed_used / $batch->total_weight_gain;
+            } else {
+                $batch->current_cfcr = 0;
+            }
+            $batch->current_ifcr = self::calculateIFCR($batch);
+
+            // Expenses
+            $expenseTotal = $batch->expenses()->sum('amount') ?? 0;
+            $batch->total_expenses = (float) $expenseTotal;
+
+            // Profit
+            $batch->current_marginal_profit_percent = self::calculateDailyMarginalProfitPercent($batch);
+
+            // Peak profit and stop-loss
+            $currentProfit = self::calculateCurrentProfit($batch);
+            if ($currentProfit > $batch->peak_profit) {
+                $batch->peak_profit = $currentProfit;
+            }
+
+            $retracement = $batch->peak_profit - $currentProfit;
+            $stopLossAmount = SystemVariable::getValue('stop_loss_amount', 20000);
+            $batch->stop_loss_used_percent = $stopLossAmount > 0 ? min(100, ($retracement / $stopLossAmount) * 100) : 0;
+
+            // Profit margin used
+            $costPerBird = self::getCostPerBird($batch);
+            $sellingPricePerBird = self::getSellingPricePerBird($batch);
+            $batch->profit_margin_used = $costPerBird > 0 ? (($sellingPricePerBird - $costPerBird) / $costPerBird) * 100 : 0;
+
+            // Update selling price fields
+            $batch->selling_price_per_kg = self::getCalculatedSellingPricePerKg($batch);
+            $batch->selling_price_per_carton = $batch->selling_price_per_kg * 10;
+
+            $batch->save();
+        });
+    }
+
+    private static function calculateTotalWeightGain(Batch $batch): float
+    {
+        $records = $batch->weightRecords()->orderBy('date')->get();
+        if ($records->count() < 2) return 0;
+
+        $totalGain = 0.0;
+        $n = SystemVariable::getValue('weighing_frequency_days', 4);
+
+        for ($i = 0; $i < $records->count() - 1; $i++) {
+            $current = $records[$i];
+            $next = $records[$i+1];
+            $daysBetween = $current->date->diffInDays($next->date);
+            if ($daysBetween > 0) {
+                $adg = ($next->average_weight - $current->average_weight) / $daysBetween;
+                $avgFlock = ($batch->starting_flock + $batch->remaining_flock) / 2;
+                $totalGain += $adg * $avgFlock * $daysBetween;
+            }
+        }
+        return $totalGain;
+    }
+
+    private static function calculateIFCR(Batch $batch): float
+    {
+        $n = (int) SystemVariable::getValue('weighing_frequency_days', 4);
+        $endDate = Carbon::today();
+        $startDate = $endDate->copy()->subDays($n);
+
+        $recentFeed = $batch->feedRecords()
+            ->where('date', '>=', $startDate)
+            ->sum('feed_used') ?? 0;
+
+        $weightRecords = $batch->weightRecords()
+            ->where('date', '>=', $startDate)
+            ->orderBy('date')
+            ->get();
+
+        if ($weightRecords->count() < 2) return 0;
+
+        $first = $weightRecords->first();
+        $last = $weightRecords->last();
+        $weightGainTotal = ($last->average_weight - $first->average_weight) * $batch->remaining_flock;
+
+        return $weightGainTotal > 0 ? $recentFeed / $weightGainTotal : 999.999;
+    }
+
+    private static function calculateDailyMarginalProfitPercent(Batch $batch): float
+    {
+        $records = $batch->weightRecords()->latest('date')->limit(2)->get();
+        if ($records->count() < 2) return 0;
+
+        $recent = $records[0];
+        $previous = $records[1];
+        $daysBetween = $recent->date->diffInDays($previous->date);
+        if ($daysBetween <= 0) return 0;
+
+        $adg = ($recent->average_weight - $previous->average_weight) / $daysBetween;
+
+        $feedUsed = $batch->feedRecords()
+            ->whereBetween('date', [$previous->date, $recent->date])
+            ->sum('feed_used') ?? 0;
+
+        $dailyFeedPerBird = $batch->remaining_flock > 0 ? $feedUsed / ($daysBetween * $batch->remaining_flock) : 0;
+
+        $avgFeedCost = $batch->feedRecords()
+            ->whereBetween('date', [$previous->date, $recent->date])
+            ->avg('feed_cost_per_kg') ?? 0;
+
+        $dailyFeedCostPerBird = $dailyFeedPerBird * $avgFeedCost;
+        $sellingPricePerKg = self::getCalculatedSellingPricePerKg($batch);
+        $marginalDailyProfit = ($adg * $sellingPricePerKg) - $dailyFeedCostPerBird;
+
+        if ($dailyFeedCostPerBird > 0) {
+            return ($marginalDailyProfit / $dailyFeedCostPerBird) * 100;
+        }
+        return 0;
+    }
+
+    private static function calculateCurrentProfit(Batch $batch): float
+    {
+        $currentWeight = self::getCurrentAverageWeight($batch);
+        if ($currentWeight <= 0 || $batch->remaining_flock <= 0) return 0;
+
+        $dressedWeight = self::getDressedWeightPerBird($batch);
+        $sellingPricePerKg = self::getCalculatedSellingPricePerKg($batch);
+        $revenue = $dressedWeight * $batch->remaining_flock * $sellingPricePerKg;
+        $totalCost = self::calculateTotalInvestment($batch) - $batch->cost_allocated_so_far;
+        return $revenue - $totalCost;
+    }
+}
+
+app\Services\Poultry\BatchObserver.php:
+<?php
+
+namespace App\Observers\Poultry;
+
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\WeighingSchedule;
+
+class BatchObserver
+{
+    public function created(Batch $batch)
+    {
+        WeighingSchedule::generateForBatch($batch);
+    }
+
+    public function updated(Batch $batch)
+    {
+        // Optionally update metrics if needed
+    }
+}
+
+app\Services\Poultry\BatchTriggerService.php:
+<?php
+
+namespace App\Services\Poultry;
+
+use App\Models\Poultry\Batch;
+use App\Models\SystemVariable;
+use Carbon\Carbon;
+
+class BatchTriggerService
+{
+    public static function checkSlaughterTriggers(Batch $batch): array
+    {
+        $triggers = [];
+
+        $dailyProfitTolerance = SystemVariable::getValue('daily_profit_tolerance', -15);
+        $fcrEfficiencyTolerance = SystemVariable::getValue('fcr_efficiency_tolerance', 20);
+        $stopLossAmount = SystemVariable::getValue('stop_loss_amount', 20000);
+
+        // 1. Daily profit tolerance
+        if ($batch->current_marginal_profit_percent <= $dailyProfitTolerance) {
+            $triggers[] = [
+                'type' => 'daily_profit',
+                'message' => "Daily profit at {$batch->current_marginal_profit_percent}%, below tolerance of {$dailyProfitTolerance}%",
+                'severity' => 'critical',
+            ];
+        }
+
+        // 2. FCR efficiency drop
+        if ($batch->current_cfcr > 0) {
+            $efficiencyDrop = (($batch->current_ifcr / $batch->current_cfcr) - 1) * 100;
+            if ($efficiencyDrop >= $fcrEfficiencyTolerance) {
+                $triggers[] = [
+                    'type' => 'fcr_efficiency',
+                    'message' => "FCR efficiency dropped by " . round($efficiencyDrop,1) . "%, above tolerance of {$fcrEfficiencyTolerance}%",
+                    'severity' => 'warning',
+                ];
+            }
+        }
+
+        // 3. Stop-loss
+        $currentProfit = self::calculateCurrentProfit($batch);
+        $retracement = $batch->peak_profit - $currentProfit;
+        if ($retracement >= $stopLossAmount) {
+            $triggers[] = [
+                'type' => 'stop_loss',
+                'message' => "Retracement of ₦" . number_format($retracement,0) . " from peak, above stop-loss of ₦" . number_format($stopLossAmount,0),
+                'severity' => 'critical',
+            ];
+        }
+
+        // 4. Emergency
+        $emergency = self::checkEmergencyTriggers($batch);
+        $triggers = array_merge($triggers, $emergency);
+
+        return $triggers;
+    }
+
+    private static function calculateCurrentProfit(Batch $batch): float
+    {
+        $currentWeight = BatchCalculationService::getCurrentAverageWeight($batch);
+        if ($currentWeight <= 0 || $batch->remaining_flock <= 0) return 0;
+
+        $dressedWeight = BatchCalculationService::getDressedWeightPerBird($batch);
+        $sellingPricePerKg = BatchCalculationService::getCalculatedSellingPricePerKg($batch);
+        $revenue = $dressedWeight * $batch->remaining_flock * $sellingPricePerKg;
+        $totalCost = BatchCalculationService::calculateTotalInvestment($batch) - $batch->cost_allocated_so_far;
+        return $revenue - $totalCost;
+    }
+
+    private static function checkEmergencyTriggers(Batch $batch): array
+    {
+        $triggers = [];
+
+        $missedCount = $batch->weighingSchedules()
+            ->where('scheduled_date', '<', Carbon::today())
+            ->where('is_completed', false)
+            ->count();
+
+        if ($missedCount >= 3) {
+            $triggers[] = [
+                'type' => 'missed_weighings',
+                'message' => "Missed {$missedCount} consecutive weighings. Switching to manual mode.",
+                'severity' => 'emergency',
+                'action' => 'switch_to_manual',
+            ];
+        }
+
+        // Weight loss > 5%
+        $weightLoss = self::checkWeightLoss($batch);
+        if ($weightLoss >= 5) {
+            $triggers[] = [
+                'type' => 'weight_loss',
+                'message' => "Weight loss of " . round($weightLoss,1) . "% detected. Switching to manual mode.",
+                'severity' => 'emergency',
+                'action' => 'switch_to_manual',
+            ];
+        }
+
+        $mortalityRate = $batch->starting_flock > 0 ? ($batch->total_mortality / $batch->starting_flock) * 100 : 0;
+        if ($mortalityRate >= 7) {
+            $triggers[] = [
+                'type' => 'high_mortality',
+                'message' => "Mortality rate of " . round($mortalityRate,1) . "% detected. Switching to manual mode.",
+                'severity' => 'emergency',
+                'action' => 'switch_to_manual',
+            ];
+        }
+
+        return $triggers;
+    }
+
+    private static function checkWeightLoss(Batch $batch): float
+    {
+        $records = $batch->weightRecords()->latest('date')->limit(2)->get();
+        if ($records->count() < 2) return 0;
+        $recent = $records[0]->average_weight;
+        $prev = $records[1]->average_weight;
+        if ($prev > 0) {
+            return max(0, (($prev - $recent) / $prev) * 100);
+        }
+        return 0;
+    }
+}
+
+app\Services\Poultry\DashboardService.php:
+<?php
+
+namespace App\Services\Poultry;
+
+use App\Models\Poultry\Batch;
+use App\Models\User;
+use App\Models\ObservationReport;
+use App\Models\Poultry\InventoryItem;
+use App\Models\Notification;
+use Illuminate\Support\Facades\DB;
+
+class DashboardService
+{
+    public static function getAdminDashboard()
+    {
+        // Similar to Django's DashboardService.get_admin_dashboard
+        // Return array of stats, charts, etc.
+        return [
+            'overview' => [
+                'total_batches' => Batch::count(),
+                'active_batches' => Batch::where('status', 'active')->count(),
+                'total_users' => User::count(),
+                'pending_approvals' => User::where('is_approved', false)->count(),
+                'total_active_investment' => self::getTotalActiveInvestment(),
+            ],
+            'financial' => [
+                'total_expenses' => Batch::sum('total_expenses') + Batch::sum('initial_chicken_cost'),
+                'inventory_value' => InventoryItem::sum(DB::raw('quantity_in_stock * cost_per_unit')),
+            ],
+            // ... more fields
+        ];
+    }
+
+    public static function getManagerDashboard(User $user)
+    {
+        // Manager-specific data
+        return [
+            'batch_stats' => Batch::where('status', 'active')->get()->map(fn($b) => [
+                'id' => $b->batch_id,
+                'name' => $b->name,
+                'age' => $b->current_age_days,
+                'remaining' => $b->remaining_flock,
+                'ifcr' => $b->current_ifcr,
+                'cfcr' => $b->current_cfcr,
+                'profit_percent' => $b->current_marginal_profit_percent,
+            ]),
+            'alerts' => [
+                'low_stock' => InventoryItem::where('quantity_in_stock', '<=', DB::raw('minimum_quantity'))->count(),
+                'today_weighings' => \App\Models\Poultry\WeighingSchedule::where('scheduled_date', now()->toDateString())->where('is_completed', false)->count(),
+            ],
+            // ...
+        ];
+    }
+
+    public static function getStaffDashboard(User $user)
+    {
+        // Staff-specific data
+        return [
+            'active_batches' => Batch::where('created_by_id', $user->id)->where('status', 'active')->get(),
+            'recent_flock' => \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get(),
+            // ...
+        ];
+    }
+
+    public static function getInvestorDashboard(User $user)
+    {
+        // Investor-specific data: only their investments
+        $investments = $user->investorInvestments()->with('batch')->get();
+        return [
+            'investments' => $investments,
+            'total_invested' => $investments->sum('amount_invested'),
+            // ...
+        ];
+    }
+
+    private static function getTotalActiveInvestment(): float
+    {
+        return Batch::where('status', 'active')->get()->sum(function ($batch) {
+            return BatchCalculationService::calculateTotalInvestment($batch);
+        });
+    }
+
+    public static function getDashboardData($user, $role)
+    {
+        return match ($role) {
+            'admin' => self::getAdminDashboard(),
+            'manager' => self::getManagerDashboard($user),
+            'staff' => self::getStaffDashboard($user),
+            'investor' => self::getInvestorDashboard($user),
+            default => [],
+        };
+    }
+}
+
+app\Services\Poultry\ExportService.php:
+<?php
+
+namespace App\Services\Poultry;
+
+use App\Models\Poultry\Batch;
+use Illuminate\Support\Facades\Response;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+
+class ExportService
+{
+    public static function exportBatchToExcel(Batch $batch)
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // Summary sheet
+        $sheet->setCellValue('A1', 'Batch ID');
+        $sheet->setCellValue('B1', $batch->batch_id);
+        // ... fill other data
+
+        // Create writer and output
+        $writer = new Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $content = ob_get_clean();
+
+        return Response::make($content, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => "attachment; filename=batch_{$batch->batch_id}.xlsx",
+        ]);
+    }
+}
+
+app\Services\Poultry\FeedRecordObserver.php:
+<?php
+
+namespace App\Observers\Poultry;
+
+use App\Models\Poultry\FeedRecord;
+use App\Models\Poultry\InventoryConsumption;
+
+class FeedRecordObserver
+{
+    public function created(FeedRecord $feedRecord)
+    {
+        if ($feedRecord->inventory_item_id) {
+            InventoryConsumption::create([
+                'inventory_item_id' => $feedRecord->inventory_item_id,
+                'poultry_batch_id' => $feedRecord->poultry_batch_id,
+                'quantity_used' => $feedRecord->feed_used,
+                'date' => $feedRecord->date,
+                'recorded_by_id' => $feedRecord->recorded_by_id,
+                'source_type' => 'feed',
+                'source_id' => $feedRecord->id,
+                'unit_cost_at_time' => $feedRecord->inventoryItem->cost_per_unit,
+                'total_cost' => $feedRecord->feed_used * $feedRecord->inventoryItem->cost_per_unit,
+            ]);
+        }
+    }
+
+    public function deleted(FeedRecord $feedRecord)
+    {
+        if ($feedRecord->inventory_item_id) {
+            InventoryConsumption::where('source_type', 'feed')
+                ->where('source_id', $feedRecord->id)
+                ->delete();
+        }
+    }
+}
+
+app\Services\Poultry\InventoryConsumptionObserver.php:
+<?php
+
+namespace App\Observers\Poultry;
+
+use App\Models\Poultry\InventoryConsumption;
+use Illuminate\Support\Facades\DB;
+
+class InventoryConsumptionObserver
+{
+    public function created(InventoryConsumption $consumption)
+    {
+        DB::table('inventory_items')
+            ->where('id', $consumption->inventory_item_id)
+            ->update([
+                'quantity_in_stock' => DB::raw("quantity_in_stock - {$consumption->quantity_used}"),
+                'quantity_used' => DB::raw("quantity_used + {$consumption->quantity_used}"),
+                'updated_at' => now(),
+            ]);
+
+        if ($consumption->poultry_batch_id) {
+            $consumption->batch->updateCachedMetrics();
+        }
+    }
+
+    public function deleted(InventoryConsumption $consumption)
+    {
+        DB::table('inventory_items')
+            ->where('id', $consumption->inventory_item_id)
+            ->update([
+                'quantity_in_stock' => DB::raw("quantity_in_stock + {$consumption->quantity_used}"),
+                'quantity_used' => DB::raw("quantity_used - {$consumption->quantity_used}"),
+                'updated_at' => now(),
+            ]);
+
+        if ($consumption->poultry_batch_id) {
+            $consumption->batch->updateCachedMetrics();
+        }
+    }
+}
+
+
+
+
+======================================================================================================
+routes folder
+======================================================================================================
+
+routes\web.php:
+<?php
+
+use App\Http\Controllers\General\DashboardController;
+use App\Http\Controllers\General\SectorSelectionController;
+use App\Http\Controllers\General\SectorController;
+use App\Http\Controllers\General\PriceCalculatorController;
+use App\Http\Controllers\General\NotificationController;
+use App\Http\Controllers\General\ObservationController;
+use App\Http\Controllers\General\HistoryQueryController;
+use App\Http\Controllers\General\ExportController;
+use App\Http\Controllers\General\AdminUserController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+*/
+
+// Landing page (public)
+Route::view('/', 'welcome')->name('home');
+
+// Authentication routes are automatically registered by Laravel Fortify
+// But we need to override the post-login redirect.
+// We'll set HOME in RouteServiceProvider to '/sectors' (see below)
+
+// Sector selection (authenticated)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/sectors', [SectorSelectionController::class, 'index'])->name('sectors.index');
+    Route::post('/sectors/select', [SectorSelectionController::class, 'select'])->name('sectors.select');
+});
+
+// Authenticated routes (require sector selection)
+Route::middleware(['auth', 'verified', 'sector.selected'])->group(function () {
+    // Dashboard
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Sector picker (optional)
+    Route::get('/sectors/list', [SectorController::class, 'index'])->name('sectors.list');
+
+    // ... all other authenticated routes
+    // Price Calculator
+    Route::get('/price-calculator', [PriceCalculatorController::class, 'index'])->name('price-calculator.index');
+    Route::post('/price-calculator', [PriceCalculatorController::class, 'calculate'])->name('price-calculator.calculate');
+
+    // Notifications
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::post('/notifications/clear-all', [NotificationController::class, 'clearAll'])->name('notifications.clear-all');
+
+    // Observations (general)
+    Route::resource('/observations', ObservationController::class)->except(['edit', 'update', 'destroy']);
+    Route::post('/observations/{observation}/review', [ObservationController::class, 'review'])->name('observations.review');
+
+    // History Queries
+    Route::get('/history', [HistoryQueryController::class, 'index'])->name('history.index');
+    Route::post('/history/query', [HistoryQueryController::class, 'execute'])->name('history.execute');
+    Route::get('/history/{query}', [HistoryQueryController::class, 'show'])->name('history.show');
+
+    // Export
+    Route::get('/export', [ExportController::class, 'index'])->name('export.index');
+    Route::post('/export', [ExportController::class, 'export'])->name('export.run');
+
+    // Admin user management
+    Route::middleware('can:manage-users')->group(function () {
+        Route::get('/admin/users', [AdminUserController::class, 'index'])->name('admin.users.index');
+        Route::post('/admin/users/{user}/approve', [AdminUserController::class, 'approve'])->name('admin.users.approve');
+        Route::post('/admin/users/{user}/deactivate', [AdminUserController::class, 'deactivate'])->name('admin.users.deactivate');
+    });
+
+    // System variables (admin only)
+    Route::middleware('can:manage-system-variables')->prefix('system')->name('system.')->group(function () {
+        Route::get('/variables', [\App\Http\Controllers\General\SystemVariableController::class, 'index'])->name('variables.index');
+        Route::get('/variables/{variable}/edit', [\App\Http\Controllers\General\SystemVariableController::class, 'edit'])->name('variables.edit');
+        Route::put('/variables/{variable}', [\App\Http\Controllers\General\SystemVariableController::class, 'update'])->name('variables.update');
+    });
+
+    // Market prices (admin only)
+    Route::middleware('can:manage-market-prices')->prefix('system')->name('system.')->group(function () {
+        Route::get('/market-prices', [\App\Http\Controllers\General\MarketPriceController::class, 'index'])->name('market-prices.index');
+        Route::post('/market-prices', [\App\Http\Controllers\General\MarketPriceController::class, 'store'])->name('market-prices.store');
+    });
+
+    // Profile
+    Route::get('/profile', [\App\Http\Controllers\General\ProfileController::class, 'show'])->name('profile.show');
+    Route::get('/profile/edit', [\App\Http\Controllers\General\ProfileController::class, 'edit'])->name('profile.edit');
+    Route::put('/profile', [\App\Http\Controllers\General\ProfileController::class, 'update'])->name('profile.update');
+
+    // Quick refresh endpoint
+    Route::post('/quick-refresh', [DashboardController::class, 'quickRefresh'])->name('quick-refresh');
+
+    // Load all sector-specific routes (they will be prefixed with the sector slug)
+    require base_path('routes/sectors/poultry.php');
+    // Future sectors: fishery, goat, etc. will be loaded similarly.
+});
+
+// If you want to redirect /home to landing or dashboard, add:
+Route::get('/home', function () {
+    return redirect()->route(auth()->check() ? 'sectors.index' : 'home');
+});
+
+routes\sectors\poultry.php:
+<?php
+
+use App\Http\Controllers\Poultry\BatchController;
+use App\Http\Controllers\Poultry\FlockRecordController;
+use App\Http\Controllers\Poultry\WeightRecordController;
+use App\Http\Controllers\Poultry\FeedRecordController;
+use App\Http\Controllers\Poultry\InventoryController;
+use App\Http\Controllers\Poultry\ExpenseController;
+use App\Http\Controllers\Poultry\InventoryConsumptionController;
+use App\Http\Controllers\Poultry\AnalyticsController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Poultry Sector Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('poultry')->name('poultry.')->middleware(['auth', 'verified'])->group(function () {
+
+    // Batches
+    Route::resource('batches', BatchController::class);
+    Route::post('batches/{batch}/export', [BatchController::class, 'export'])->name('batches.export');
+    Route::post('batches/{batch}/manual-mode', [BatchController::class, 'toggleManualMode'])->name('batches.manual-mode');
+
+    // Flock Records
+    Route::resource('flock-records', FlockRecordController::class)->except(['index']);
+    Route::get('batches/{batch}/flock-records', [FlockRecordController::class, 'index'])->name('batches.flock-records');
+
+    // Weight Records
+    Route::resource('weight-records', WeightRecordController::class)->except(['index']);
+    Route::get('batches/{batch}/weight-records', [WeightRecordController::class, 'index'])->name('batches.weight-records');
+
+    // Feed Records
+    Route::resource('feed-records', FeedRecordController::class)->except(['index']);
+    Route::get('batches/{batch}/feed-records', [FeedRecordController::class, 'index'])->name('batches.feed-records');
+
+    // Inventory Items
+    Route::resource('inventory', InventoryController::class);
+    Route::post('inventory/{item}/kill', [InventoryController::class, 'kill'])->name('inventory.kill');
+    Route::post('inventory/{item}/recalculate-costs', [InventoryController::class, 'recalculateCosts'])->name('inventory.recalculate');
+
+    // Inventory Consumption
+    Route::resource('inventory-consumptions', InventoryConsumptionController::class)->except(['index', 'show']);
+    Route::get('inventory-consumptions/create', [InventoryConsumptionController::class, 'create'])->name('inventory-consumptions.create');
+
+    // Expenses
+    Route::resource('expenses', ExpenseController::class)->except(['index']);
+    Route::get('batches/{batch}/expenses', [ExpenseController::class, 'index'])->name('batches.expenses');
+
+    // Analytics
+    Route::prefix('analytics')->name('analytics.')->group(function () {
+        Route::get('global', [AnalyticsController::class, 'global'])->name('global');
+        Route::get('batches/{batch}/charts', [AnalyticsController::class, 'charts'])->name('charts');
+        Route::get('batches/{batch}/realtime', [AnalyticsController::class, 'realtime'])->name('realtime');
+    });
+
+    // Form Hub (convenience)
+    Route::get('forms/hub', [\App\Http\Controllers\Poultry\FormHubController::class, 'index'])->name('forms.hub');
+
+    // Individual form routes (you might redirect to resources or use specific controllers)
+    Route::get('forms/flock-record/create', [FlockRecordController::class, 'create'])->name('forms.flock-record.create');
+    Route::post('forms/flock-record', [FlockRecordController::class, 'store'])->name('forms.flock-record.store');
+
+    Route::get('forms/weight-record/create', [WeightRecordController::class, 'create'])->name('forms.weight-record.create');
+    Route::post('forms/weight-record', [WeightRecordController::class, 'store'])->name('forms.weight-record.store');
+
+    Route::get('forms/feed-record/create', [FeedRecordController::class, 'create'])->name('forms.feed-record.create');
+    Route::post('forms/feed-record', [FeedRecordController::class, 'store'])->name('forms.feed-record.store');
+
+    Route::get('forms/expense/create', [ExpenseController::class, 'create'])->name('forms.expense.create');
+    Route::post('forms/expense', [ExpenseController::class, 'store'])->name('forms.expense.store');
+
+    Route::get('forms/inventory-consumption/create', [InventoryConsumptionController::class, 'create'])->name('forms.inventory-consumption.create');
+    Route::post('forms/inventory-consumption', [InventoryConsumptionController::class, 'store'])->name('forms.inventory-consumption.store');
+
+    // API endpoints for dynamic data (optional)
+    Route::get('api/batches/{batch}/chart-data', [AnalyticsController::class, 'chartData'])->name('api.chart-data');
+    Route::get('api/batches/{batch}/summary', [BatchController::class, 'summary'])->name('api.summary');
+});
+
+===========================================================================================
+Migrations Folder
+===========================================================================================
+
+database\migrations\0001_01_01_000000_create_users_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
+            $table->rememberToken();
+            $table->timestamps();
+        });
+
+        Schema::create('password_reset_tokens', function (Blueprint $table) {
+            $table->string('email')->primary();
+            $table->string('token');
+            $table->timestamp('created_at')->nullable();
+        });
+
+        Schema::create('sessions', function (Blueprint $table) {
+            $table->string('id')->primary();
+            $table->foreignId('user_id')->nullable()->index();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->longText('payload');
+            $table->integer('last_activity')->index();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('users');
+        Schema::dropIfExists('password_reset_tokens');
+        Schema::dropIfExists('sessions');
+    }
+};
+
+database\migrations\0001_01_01_000001_create_cache_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('cache', function (Blueprint $table) {
+            $table->string('key')->primary();
+            $table->mediumText('value');
+            $table->integer('expiration')->index();
+        });
+
+        Schema::create('cache_locks', function (Blueprint $table) {
+            $table->string('key')->primary();
+            $table->string('owner');
+            $table->integer('expiration')->index();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('cache');
+        Schema::dropIfExists('cache_locks');
+    }
+};
+
+database\migrations\0001_01_01_000002_create_jobs_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('jobs', function (Blueprint $table) {
+            $table->id();
+            $table->string('queue')->index();
+            $table->longText('payload');
+            $table->unsignedTinyInteger('attempts');
+            $table->unsignedInteger('reserved_at')->nullable();
+            $table->unsignedInteger('available_at');
+            $table->unsignedInteger('created_at');
+        });
+
+        Schema::create('job_batches', function (Blueprint $table) {
+            $table->string('id')->primary();
+            $table->string('name');
+            $table->integer('total_jobs');
+            $table->integer('pending_jobs');
+            $table->integer('failed_jobs');
+            $table->longText('failed_job_ids');
+            $table->mediumText('options')->nullable();
+            $table->integer('cancelled_at')->nullable();
+            $table->integer('created_at');
+            $table->integer('finished_at')->nullable();
+        });
+
+        Schema::create('failed_jobs', function (Blueprint $table) {
+            $table->id();
+            $table->string('uuid')->unique();
+            $table->text('connection');
+            $table->text('queue');
+            $table->longText('payload');
+            $table->longText('exception');
+            $table->timestamp('failed_at')->useCurrent();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('jobs');
+        Schema::dropIfExists('job_batches');
+        Schema::dropIfExists('failed_jobs');
+    }
+};
+
+database\migrations\2026_08_12_041710_add_two_factor_columns_to_users_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->text('two_factor_secret')
+                ->after('password')
+                ->nullable();
+
+            $table->text('two_factor_recovery_codes')
+                ->after('two_factor_secret')
+                ->nullable();
+
+            $table->timestamp('two_factor_confirmed_at')
+                ->after('two_factor_recovery_codes')
+                ->nullable();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn([
+                'two_factor_secret',
+                'two_factor_recovery_codes',
+                'two_factor_confirmed_at',
+            ]);
+        });
+    }
+};
+
+database\migrations\2026_08_12_041711_create_passkeys_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Laravel\Passkeys\Passkeys;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('passkeys', function (Blueprint $table) {
+            $table->id();
+            $table->foreignIdFor(Passkeys::userModel(), 'user_id')->constrained()->cascadeOnDelete();
+            $table->string('name');
+            $table->string('credential_id')->unique();
+            $table->json('credential');
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamps();
+
+            $table->index('user_id');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('passkeys');
+    }
+};
+
+database\migrations\2026_08_12_041711_create_permission_tables.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        $teams = config('permission.teams');
+        $tableNames = config('permission.table_names');
+        $columnNames = config('permission.column_names');
+        $pivotRole = $columnNames['role_pivot_key'] ?? 'role_id';
+        $pivotPermission = $columnNames['permission_pivot_key'] ?? 'permission_id';
+
+        throw_if(empty($tableNames), Exception::class, 'Error: config/permission.php not loaded. Run [php artisan config:clear] and try again.');
+        throw_if($teams && empty($columnNames['team_foreign_key'] ?? null), Exception::class, 'Error: team_foreign_key on config/permission.php not loaded. Run [php artisan config:clear] and try again.');
+
+        Schema::create($tableNames['permissions'], static function (Blueprint $table) {
+            // $table->engine('InnoDB');
+            $table->bigIncrements('id'); // permission id
+            $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
+            $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
+            $table->timestamps();
+
+            $table->unique(['name', 'guard_name']);
+        });
+
+        Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames) {
+            // $table->engine('InnoDB');
+            $table->bigIncrements('id'); // role id
+            if ($teams || config('permission.testing')) { // permission.testing is a fix for sqlite testing
+                $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
+                $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
+            }
+            $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
+            $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
+            $table->timestamps();
+            if ($teams || config('permission.testing')) {
+                $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
+            } else {
+                $table->unique(['name', 'guard_name']);
+            }
+        });
+
+        Schema::create($tableNames['model_has_permissions'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotPermission, $teams) {
+            $table->unsignedBigInteger($pivotPermission);
+
+            $table->string('model_type');
+            $table->unsignedBigInteger($columnNames['model_morph_key']);
+            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_permissions_model_id_model_type_index');
+
+            $table->foreign($pivotPermission)
+                ->references('id') // permission id
+                ->on($tableNames['permissions'])
+                ->onDelete('cascade');
+            if ($teams) {
+                $table->unsignedBigInteger($columnNames['team_foreign_key']);
+                $table->index($columnNames['team_foreign_key'], 'model_has_permissions_team_foreign_key_index');
+
+                $table->primary([$columnNames['team_foreign_key'], $pivotPermission, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_permissions_permission_model_type_primary');
+            } else {
+                $table->primary([$pivotPermission, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_permissions_permission_model_type_primary');
+            }
+
+        });
+
+        Schema::create($tableNames['model_has_roles'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotRole, $teams) {
+            $table->unsignedBigInteger($pivotRole);
+
+            $table->string('model_type');
+            $table->unsignedBigInteger($columnNames['model_morph_key']);
+            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_roles_model_id_model_type_index');
+
+            $table->foreign($pivotRole)
+                ->references('id') // role id
+                ->on($tableNames['roles'])
+                ->onDelete('cascade');
+            if ($teams) {
+                $table->unsignedBigInteger($columnNames['team_foreign_key']);
+                $table->index($columnNames['team_foreign_key'], 'model_has_roles_team_foreign_key_index');
+
+                $table->primary([$columnNames['team_foreign_key'], $pivotRole, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_roles_role_model_type_primary');
+            } else {
+                $table->primary([$pivotRole, $columnNames['model_morph_key'], 'model_type'],
+                    'model_has_roles_role_model_type_primary');
+            }
+        });
+
+        Schema::create($tableNames['role_has_permissions'], static function (Blueprint $table) use ($tableNames, $pivotRole, $pivotPermission) {
+            $table->unsignedBigInteger($pivotPermission);
+            $table->unsignedBigInteger($pivotRole);
+
+            $table->foreign($pivotPermission)
+                ->references('id') // permission id
+                ->on($tableNames['permissions'])
+                ->onDelete('cascade');
+
+            $table->foreign($pivotRole)
+                ->references('id') // role id
+                ->on($tableNames['roles'])
+                ->onDelete('cascade');
+
+            $table->primary([$pivotPermission, $pivotRole], 'role_has_permissions_permission_id_role_id_primary');
+        });
+
+        app('cache')
+            ->store(config('permission.cache.store') != 'default' ? config('permission.cache.store') : null)
+            ->forget(config('permission.cache.key'));
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        $tableNames = config('permission.table_names');
+
+        throw_if(empty($tableNames), Exception::class, 'Error: config/permission.php not found and defaults could not be merged. Please publish the package configuration before proceeding, or drop the tables manually.');
+
+        Schema::drop($tableNames['role_has_permissions']);
+        Schema::drop($tableNames['model_has_roles']);
+        Schema::drop($tableNames['model_has_permissions']);
+        Schema::drop($tableNames['roles']);
+        Schema::drop($tableNames['permissions']);
+    }
+};
+
+database\migrations\2026_08_12_041932_create_sectors_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('sectors', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('slug')->unique();
+            $table->text('description')->nullable();
+            $table->decimal('cost', 15, 2)->default(0);
+            $table->decimal('estimated_revenue', 15, 2)->nullable();
+            $table->date('date_of_resumption')->nullable();
+            $table->enum('status', ['planned', 'active', 'paused', 'archived'])->default('planned');
+            $table->boolean('is_live')->default(false);
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('sectors');
+    }
+};
+
+database\migrations\2026_08_12_042006_add_fields_to_users_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up()
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->string('role')->default('staff'); // matches spatie role name
+            $table->string('phone')->nullable();
+            $table->string('farm_location')->nullable();
+            $table->boolean('is_approved')->default(false);
+            $table->foreignId('approved_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('approved_at')->nullable();
+        });
+    }
+
+    public function down()
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn(['role', 'phone', 'farm_location', 'is_approved', 'approved_by_id', 'approved_at']);
+        });
+    }
+};
+
+database\migrations\2026_08_12_042830_create_observation_categories_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('observation_categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->text('description')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('observation_categories');
+    }
+};
+
+database\migrations\2026_08_12_042834_create_observation_reports_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('observation_reports', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->foreignId('category_id')->nullable()->constrained('observation_categories')->nullOnDelete();
+            $table->string('other_category')->nullable();
+            $table->text('description');
+            $table->json('affected_batch_ids')->nullable();
+            $table->json('evidence_photos')->nullable();
+            $table->enum('status', ['pending', 'reviewed', 'action_taken', 'resolved', 'closed'])->default('pending');
+            $table->enum('priority', ['low', 'medium', 'high', 'critical'])->default('medium');
+            $table->foreignId('reported_by_id')->constrained('users')->cascadeOnDelete();
+            $table->timestamp('reported_at')->useCurrent();
+            $table->foreignId('reviewed_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('reviewed_at')->nullable();
+            $table->foreignId('resolved_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('resolved_at')->nullable();
+            $table->text('admin_response')->nullable();
+            $table->text('actions_taken')->nullable();
+            $table->boolean('is_archived')->default(false);
+            $table->boolean('requires_follow_up')->default(false);
+            $table->date('follow_up_date')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('observation_reports');
+    }
+};
+
+database\migrations\2026_08_12_042838_create_history_queries_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('history_queries', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('query_type', 20);
+            $table->date('date_from')->nullable();
+            $table->date('date_to')->nullable();
+            $table->foreignId('user_filter_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('batch_filter_id')->nullable()->constrained('poultry_batches')->nullOnDelete();
+            $table->string('category_filter')->nullable();
+            $table->decimal('min_amount', 12, 2)->nullable();
+            $table->decimal('max_amount', 12, 2)->nullable();
+            $table->unsignedInteger('result_count')->default(0);
+            $table->timestamp('last_executed')->nullable();
+            $table->unsignedInteger('execution_time_ms')->default(0);
+            $table->foreignId('created_by_id')->constrained('users')->cascadeOnDelete();
+            $table->boolean('is_shared')->default(false);
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('history_queries');
+    }
+};
+
+database\migrations\2026_08_12_042845_create_notifications_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('notifications', function (Blueprint $table) {
+            $table->id();
+            $table->string('notification_type', 50);
+            $table->string('title');
+            $table->text('message');
+            $table->foreignId('batch_id')->nullable()->constrained('poultry_batches')->nullOnDelete();
+            $table->foreignId('observation_report_id')->nullable()->constrained('observation_reports')->nullOnDelete();
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('notifications');
+    }
+};
+
+database\migrations\2026_08_12_042851_create_notification_read_statuses_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('notification_read_statuses', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('notification_id')->constrained()->cascadeOnDelete();
+            $table->boolean('is_read')->default(false);
+            $table->timestamp('read_at')->nullable();
+            $table->timestamps();
+            $table->unique(['user_id', 'notification_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('notification_read_statuses');
+    }
+};
+
+database\migrations\2026_08_12_042857_create_export_histories_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('export_histories', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('export_format', 10);
+            $table->foreignId('batch_id')->nullable()->constrained('poultry_batches')->nullOnDelete();
+            $table->string('export_type', 50);
+            $table->string('file_name');
+            $table->unsignedInteger('file_size')->nullable();
+            $table->timestamp('exported_at')->useCurrent();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('export_histories');
+    }
+};
+
+database\migrations\2026_08_12_042904_create_pens_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('pens', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('pen_code')->unique();
+            $table->enum('pen_type', ['brooding', 'batch'])->default('batch');
+            $table->unsignedInteger('capacity');
+            $table->boolean('is_active')->default(true);
+            $table->text('notes')->nullable();
+            $table->foreignId('current_batch_id')->nullable()->constrained('poultry_batches')->nullOnDelete();
+            $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('pens');
+    }
+};
+
+database\migrations\2026_08_12_042910_create_batches_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('poultry_batches', function (Blueprint $table) {
+            $table->id();
+            $table->string('batch_id')->unique();
+            $table->string('name');
+            $table->string('hatchery')->nullable();
+            $table->date('start_date');
+            $table->unsignedInteger('starting_flock');
+            $table->unsignedInteger('remaining_flock')->default(0);
+            $table->enum('phase', ['brooding', 'batch'])->default('batch');
+            $table->foreignId('pen_id')->nullable()->constrained('pens')->nullOnDelete();
+            $table->decimal('selling_price_per_kg', 10, 2)->default(0);
+            $table->decimal('selling_price_per_carton', 10, 2)->default(0);
+            $table->decimal('initial_chicken_cost', 12, 2)->default(0);
+            $table->enum('status', ['active', 'closed', 'completed'])->default('active');
+            $table->timestamp('closed_at')->nullable();
+            $table->unsignedInteger('current_age_days')->default(0);
+            $table->unsignedInteger('total_mortality')->default(0);
+            $table->integer('total_culls')->default(0);
+            $table->unsignedInteger('total_slaughter')->default(0);
+            $table->decimal('total_feed_used', 12, 3)->default(0);
+            $table->decimal('bags_consumed', 10, 2)->default(0);
+            $table->decimal('total_weight_gain', 12, 3)->default(0);
+            $table->decimal('current_ifcr', 10, 4)->default(0);
+            $table->decimal('current_cfcr', 10, 4)->default(0);
+            $table->decimal('current_marginal_profit_percent', 10, 2)->default(0);
+            $table->decimal('total_expenses', 14, 2)->default(0);
+            $table->decimal('cost_allocated_so_far', 14, 2)->default(0);
+            $table->decimal('peak_profit', 14, 2)->default(0);
+            $table->decimal('profit_margin_used', 10, 2)->default(0);
+            $table->decimal('stop_loss_used_percent', 10, 2)->default(0);
+            $table->boolean('is_manual_mode')->default(false);
+            $table->text('manual_mode_reason')->nullable();
+            $table->foreignId('manual_mode_enabled_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('manual_mode_enabled_at')->nullable();
+            $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('sector_id')->constrained('sectors');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('poultry_batches');
+    }
+};
+
+database\migrations\2026_08_12_042917_create_flock_records_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('flock_records', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('poultry_batch_id')->constrained('poultry_batches')->cascadeOnDelete();
+            $table->date('date');
+            $table->unsignedInteger('mortality')->default(0);
+            $table->integer('culls')->default(0);
+            $table->unsignedInteger('slaughter')->default(0);
+            $table->text('notes')->nullable();
+            $table->foreignId('recorded_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+            $table->unique(['poultry_batch_id', 'date']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('flock_records');
+    }
+};
+
+database\migrations\2026_08_12_042921_create_weight_records_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('weight_records', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('poultry_batch_id')->constrained('poultry_batches')->cascadeOnDelete();
+            $table->date('date');
+            $table->json('individual_weights');
+            $table->unsignedInteger('birds_weighed')->default(0);
+            $table->decimal('total_weight', 12, 3)->default(0);
+            $table->decimal('average_weight', 10, 3)->default(0);
+            $table->decimal('coefficient_variation', 5, 2)->default(0);
+            $table->enum('cv_status', ['excellent', 'caution', 'warning', 'rejected'])->default('excellent');
+            $table->boolean('is_valid_sample')->default(true);
+            $table->decimal('expected_weight', 10, 3)->default(0);
+            $table->text('notes')->nullable();
+            $table->foreignId('recorded_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+            $table->index(['poultry_batch_id', 'date']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('weight_records');
+    }
+};
+
+database\migrations\2026_08_12_042926_create_feed_records_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('feed_records', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('poultry_batch_id')->constrained('poultry_batches')->cascadeOnDelete();
+            $table->foreignId('inventory_item_id')->nullable()->constrained('inventory_items')->nullOnDelete();
+            $table->date('date');
+            $table->decimal('feed_used', 10, 3);
+            $table->decimal('feed_cost_per_kg', 10, 2);
+            $table->decimal('total_feed_cost', 12, 2);
+            $table->decimal('feed_per_bird', 10, 3);
+            $table->foreignId('recorded_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('feed_records');
+    }
+};
+
+database\migrations\2026_08_12_042931_create_inventory_items_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('inventory_items', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->enum('category', ['feed', 'vaccine', 'medicine', 'consumables', 'packaging', 'other']);
+            $table->enum('unit', ['kg', 'g', 'l', 'ml', 'unit', 'bag', 'spoon', 'box']);
+            $table->decimal('quantity_in_stock', 12, 3)->default(0);
+            $table->decimal('quantity_used', 12, 3)->default(0);
+            $table->decimal('minimum_quantity', 12, 3)->default(0);
+            $table->string('vendor')->nullable();
+            $table->decimal('cost_per_unit', 10, 2);
+            $table->boolean('is_active')->default(true);
+            $table->enum('status', ['active', 'killed'])->default('active');
+            $table->text('killed_reason')->nullable();
+            $table->foreignId('killed_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('killed_at')->nullable();
+            $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('inventory_items');
+    }
+};
+
+database\migrations\2026_08_12_042936_create_inventory_consumptions_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('inventory_consumptions', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_item_id')->constrained('inventory_items')->cascadeOnDelete();
+            $table->foreignId('poultry_batch_id')->nullable()->constrained('poultry_batches')->nullOnDelete();
+            $table->decimal('quantity_used', 12, 3);
+            $table->date('date');
+            $table->decimal('unit_cost_at_time', 10, 2);
+            $table->decimal('total_cost', 12, 2);
+            $table->enum('source_type', ['manual', 'feed', 'expense'])->default('manual');
+            $table->unsignedBigInteger('source_id')->nullable();
+            $table->foreignId('recorded_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('inventory_consumptions');
+    }
+};
+
+database\migrations\2026_08_12_042940_create_expenses_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('expenses', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('poultry_batch_id')->nullable()->constrained('poultry_batches')->cascadeOnDelete();
+            $table->date('date');
+            $table->enum('category', ['medication', 'vaccination', 'labor', 'utilities', 'maintenance', 'transport', 'packaging', 'other']);
+            $table->string('description');
+            $table->decimal('amount', 12, 2);
+            $table->string('receipt_number')->nullable();
+            $table->string('vendor')->nullable();
+            $table->foreignId('recorded_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('expenses');
+    }
+};
+
+database\migrations\2026_08_12_042943_create_weighing_schedules_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('weighing_schedules', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('poultry_batch_id')->constrained('poultry_batches')->cascadeOnDelete();
+            $table->date('scheduled_date');
+            $table->boolean('is_completed')->default(false);
+            $table->timestamp('completed_at')->nullable();
+            $table->boolean('admin_notified_missed')->default(false);
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('weighing_schedules');
+    }
+};
+
+database\migrations\2026_08_12_042945_create_performance_metrics_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('performance_metrics', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('poultry_batch_id')->constrained('poultry_batches')->cascadeOnDelete();
+            $table->date('date');
+            $table->unsignedInteger('age_days');
+            $table->decimal('average_weight', 10, 3);
+            $table->decimal('daily_feed', 10, 3);
+            $table->decimal('cumulative_feed', 12, 3);
+            $table->decimal('ifcr', 10, 4);
+            $table->decimal('cfcr', 10, 4);
+            $table->decimal('marginal_profit_percent', 10, 2);
+            $table->decimal('adg', 10, 4)->nullable();
+            $table->timestamps();
+            $table->unique(['poultry_batch_id', 'date']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('performance_metrics');
+    }
+};
+
+database\migrations\2026_08_12_042949_create_investor_investments_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('investor_investments', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('investor_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('poultry_batch_id')->constrained('poultry_batches')->cascadeOnDelete();
+            $table->decimal('amount_invested', 14, 2);
+            $table->date('investment_date');
+            $table->decimal('batch_total_cost_at_investment', 14, 2);
+            $table->decimal('investment_percentage', 10, 4);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('investor_investments');
+    }
+};
+
+database\migrations\2026_08_12_043316_create_system_variables_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('system_variables', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('key')->unique();
+            $table->string('category', 20)->default('general');
+            $table->string('value');
+            $table->string('data_type', 20)->default('decimal');
+            $table->text('description')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('updated_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('system_variables');
+    }
+};
+
+database\migrations\2026_08_12_102904_add_two_factor_columns_to_users_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->text('two_factor_secret')
+                ->after('password')
+                ->nullable();
+
+            $table->text('two_factor_recovery_codes')
+                ->after('two_factor_secret')
+                ->nullable();
+
+            $table->timestamp('two_factor_confirmed_at')
+                ->after('two_factor_recovery_codes')
+                ->nullable();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn([
+                'two_factor_secret',
+                'two_factor_recovery_codes',
+                'two_factor_confirmed_at',
+            ]);
+        });
+    }
+};
+
+database\migrations\2026_08_12_102905_create_passkeys_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Laravel\Passkeys\Passkeys;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('passkeys', function (Blueprint $table) {
+            $table->id();
+            $table->foreignIdFor(Passkeys::userModel(), 'user_id')->constrained()->cascadeOnDelete();
+            $table->string('name');
+            $table->string('credential_id')->unique();
+            $table->json('credential');
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamps();
+
+            $table->index('user_id');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('passkeys');
+    }
+}; chaw
