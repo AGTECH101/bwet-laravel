@@ -18,10 +18,15 @@ class FlockRecordController extends Controller
         return view('sectors.poultry.flock-records.index', compact('batch', 'records'));
     }
 
-    public function create(Batch $batch)
+    public function create(?Batch $batch = null)
     {
         Gate::authorize('create', FlockRecord::class);
-        return view('sectors.poultry.flock-records.create', compact('batch'));
+
+        $batches = Batch::query()
+            ->orderBy('start_date', 'desc')
+            ->get();
+
+        return view('sectors.poultry.flock-records.create', compact('batch', 'batches'));
     }
 
     public function store(FlockRecordRequest $request)

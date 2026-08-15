@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -9,7 +10,7 @@ use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-    use Notifiable, TwoFactorAuthenticatable, HasRoles;
+    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasRoles;
 
     protected $fillable = [
         'name', 'email', 'password', 'role', 'phone', 'farm_location',
@@ -44,5 +45,10 @@ class User extends Authenticatable
     public function createdBatches()
     {
         return $this->hasMany(Poultry\Batch::class, 'created_by_id');
+    }
+
+    public function investorInvestments()
+    {
+        return $this->hasMany(Poultry\InvestorInvestment::class, 'investor_id');
     }
 }

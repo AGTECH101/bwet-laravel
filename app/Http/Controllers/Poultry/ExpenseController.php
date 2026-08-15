@@ -17,10 +17,15 @@ class ExpenseController extends Controller
         return view('sectors.poultry.expenses.index', compact('batch', 'expenses'));
     }
 
-    public function create(Batch $batch)
+    public function create(?Batch $batch = null)
     {
         Gate::authorize('create', Expense::class);
-        return view('sectors.poultry.expenses.create', compact('batch'));
+
+        $batches = Batch::query()
+            ->orderBy('start_date', 'desc')
+            ->get();
+
+        return view('sectors.poultry.expenses.create', compact('batch', 'batches'));
     }
 
     public function store(ExpenseRequest $request)

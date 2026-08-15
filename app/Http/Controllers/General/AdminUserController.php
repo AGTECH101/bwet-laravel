@@ -9,6 +9,39 @@ use Illuminate\Support\Facades\Gate;
 
 class AdminUserController extends Controller
 {
+    public function create()
+    {
+        Gate::authorize('manage-users');
+
+        return view('general.admin.users.create');
+    }
+
+    public function store(Request $request)
+    {
+        Gate::authorize('manage-users');
+
+        $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'phone' => ['required', 'string', 'max:20', 'regex:/^\+?[0-9\s\-()]+$/'],
+            'role' => ['required', 'string', 'in:admin,manager,staff,investor'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'phone' => trim((string) $request->phone),
+            'role' => $request->role,
+            'password' => bcrypt($request->password),
+            'is_approved' => true,
+            'approved_by_id' => auth()->id(),
+            'approved_at' => now(),
+        ]);
+
+        return redirect()->route('admin.users.index')->with('success', "User {$user->name} created successfully.");
+    }
+
     public function index(Request $request)
     {
         Gate::authorize('manage-users');

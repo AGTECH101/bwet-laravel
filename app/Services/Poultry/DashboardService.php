@@ -13,8 +13,10 @@ class DashboardService
 {
     public static function getAdminDashboard()
     {
-        // Similar to Django's DashboardService.get_admin_dashboard
-        // Return array of stats, charts, etc.
+        $recentBatches = Batch::query()->latest('created_at')->limit(5)->get();
+        $lowStockItems = InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->get();
+        $outOfStockItems = InventoryItem::where('quantity_in_stock', '<=', 0)->get();
+
         return [
             'overview' => [
                 'total_batches' => Batch::count(),
@@ -27,49 +29,88 @@ class DashboardService
                 'total_expenses' => Batch::sum('total_expenses') + Batch::sum('initial_chicken_cost'),
                 'inventory_value' => InventoryItem::sum(DB::raw('quantity_in_stock * cost_per_unit')),
             ],
-            // ... more fields
+            'alerts' => [
+                'low_stock_items' => $lowStockItems->count(),
+                'out_of_stock_items' => $outOfStockItems->count(),
+            ],
+            'recentBatches' => $recentBatches,
+            'low_stock_items' => $lowStockItems,
+            'out_of_stock_items' => $outOfStockItems,
+            'todayTasksCount' => \App\Models\Poultry\WeighingSchedule::whereDate('scheduled_date', today())->where('is_completed', false)->count(),
         ];
     }
 
     public static function getManagerDashboard(User $user)
     {
-        // Manager-specific data
+        $batches = Batch::where('status', 'active')->with('createdBy')->get();
+        $lowStockItems = InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->get();
+        $outOfStockItems = InventoryItem::where('quantity_in_stock', '<=', 0)->get();
+        $todaySchedules = \App\Models\Poultry\WeighingSchedule::with('batch')->whereDate('scheduled_date', today())->where('is_completed', false)->get();
+        $observations = [
+            'my_recent' => \App\Models\ObservationReport::query()->latest('created_at')->limit(5)->get(),
+        ];
+
+        $avgMortality = $batches->isNotEmpty() ? $batches->avg(fn ($batch) => $batch->starting_flock > 0 ? (($batch->total_mortality / $batch->starting_flock) * 100) : 0) : 0;
+        $avgCfcr = $batches->isNotEmpty() ? $batches->avg('current_cfcr') : 0;
+        $totalFeedUsed = $batches->sum('total_feed_used');
+
         return [
-            'batch_stats' => Batch::where('status', 'active')->get()->map(fn($b) => [
-                'id' => $b->batch_id,
-                'name' => $b->name,
-                'age' => $b->current_age_days,
-                'remaining' => $b->remaining_flock,
-                'ifcr' => $b->current_ifcr,
-                'cfcr' => $b->current_cfcr,
-                'profit_percent' => $b->current_marginal_profit_percent,
-            ]),
-            'alerts' => [
-                'low_stock' => InventoryItem::where('quantity_in_stock', '<=', DB::raw('minimum_quantity'))->count(),
-                'today_weighings' => \App\Models\Poultry\WeighingSchedule::where('scheduled_date', now()->toDateString())->where('is_completed', false)->count(),
+            'batches' => $batches,
+            'overall_metrics' => [
+                'avg_mortality' => $avgMortality,
+                'avg_cfcr' => $avgCfcr,
+                'total_feed_used' => $totalFeedUsed,
             ],
-            // ...
+            'low_stock_items' => $lowStockItems,
+            'out_of_stock_items' => $outOfStockItems,
+            'observations' => $observations,
+            'todayTasksCount' => $todaySchedules->count(),
+            'todaySchedules' => $todaySchedules,
+            'lowStockCount' => $lowStockItems->count(),
+            'unreadNotificationsCount' => Notification::where('is_active', true)->count(),
+            'recentNotifications' => [],
         ];
     }
 
     public static function getStaffDashboard(User $user)
     {
-        // Staff-specific data
+        $activeBatches = Batch::where('created_by_id', $user->id)->where('status', 'active')->get();
+        $todaySchedules = \App\Models\Poultry\WeighingSchedule::with('batch')->whereDate('scheduled_date', today())->where('is_completed', false)->get();
+        $flockRecords = \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get();
+        $weightRecords = \App\Models\Poultry\WeightRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get();
+        $feedRecords = \App\Models\Poultry\FeedRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get();
+
         return [
-            'active_batches' => Batch::where('created_by_id', $user->id)->where('status', 'active')->get(),
-            'recent_flock' => \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get(),
-            // ...
+            'stats' => [
+                'active_batches' => $activeBatches->count(),
+                'batches_created' => Batch::where('created_by_id', $user->id)->count(),
+                'flock_records' => \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->count(),
+                'weight_records' => \App\Models\Poultry\WeightRecord::where('recorded_by_id', $user->id)->count(),
+                'feed_records' => \App\Models\Poultry\FeedRecord::where('recorded_by_id', $user->id)->count(),
+                'last_flock_date' => \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->latest('date')->value('date'),
+                'last_weight_date' => \App\Models\Poultry\WeightRecord::where('recorded_by_id', $user->id)->latest('date')->value('date'),
+                'last_feed_date' => \App\Models\Poultry\FeedRecord::where('recorded_by_id', $user->id)->latest('date')->value('date'),
+            ],
+            'active_batches' => $activeBatches,
+            'recent_flock' => $flockRecords,
+            'todayTasksCount' => $todaySchedules->count(),
+            'todaySchedules' => $todaySchedules,
+            'lowStockCount' => InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->count(),
+            'unreadNotificationsCount' => Notification::where('is_active', true)->count(),
+            'recentNotifications' => [],
         ];
     }
 
     public static function getInvestorDashboard(User $user)
     {
-        // Investor-specific data: only their investments
         $investments = $user->investorInvestments()->with('batch')->get();
         return [
             'investments' => $investments,
             'total_invested' => $investments->sum('amount_invested'),
-            // ...
+            'todayTasksCount' => 0,
+            'lowStockCount' => 0,
+            'unreadNotificationsCount' => 0,
+            'recentNotifications' => [],
         ];
     }
 

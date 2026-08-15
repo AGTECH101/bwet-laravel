@@ -3,113 +3,160 @@
 namespace App\Http\Controllers\Poultry;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Poultry\InventoryConsumptionRequest;
-use App\Models\Poultry\Batch;
-use App\Models\Poultry\InventoryConsumption;
+use App\Http\Requests\Poultry\InventoryItemRequest;
 use App\Models\Poultry\InventoryItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
-class InventoryConsumptionController extends Controller
+class InventoryController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
-        Gate::authorize('viewAny', InventoryConsumption::class);
+        Gate::authorize('viewAny', InventoryItem::class);
 
-        $query = InventoryConsumption::with('inventoryItem', 'batch', 'recordedBy');
+        $query = InventoryItem::query();
 
-        if ($request->has('inventory_item')) {
-            $query->where('inventory_item_id', $request->inventory_item);
-        }
-        if ($request->has('batch')) {
-            $query->where('poultry_batch_id', $request->batch);
+        if ($request->filled('category')) {
+            $query->where('category', $request->category);
         }
 
-        $consumptions = $query->latest('date')->paginate(20);
-
-        $inventoryItems = InventoryItem::where('is_active', true)->get();
-        $batches = Batch::where('status', 'active')->get();
-
-        return view('sectors.poultry.inventory-consumptions.index', compact('consumptions', 'inventoryItems', 'batches'));
-    }
-
-    /**
-     * Show the form for creating a new consumption.
-     */
-    public function create(Request $request)
-    {
-        Gate::authorize('create', InventoryConsumption::class);
-
-        $inventoryItems = InventoryItem::where('is_active', true)->get();
-        $batches = Batch::where('status', 'active')->get();
-
-        $selectedItem = null;
-        if ($request->has('inventory_item')) {
-            $selectedItem = InventoryItem::find($request->inventory_item);
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('vendor', 'like', "%{$search}%");
+            });
         }
 
-        return view('sectors.poultry.forms.inventory-consumption', compact('inventoryItems', 'batches', 'selectedItem'));
-    }
+        if ($request->filled('status')) {
+            if ($request->status === 'low') {
+                $query->whereColumn('quantity_in_stock', '<=', 'minimum_quantity');
+            }
 
-    /**
-     * Store a newly created consumption.
-     */
-    public function store(InventoryConsumptionRequest $request)
-    {
-        Gate::authorize('create', InventoryConsumption::class);
-
-        $data = $request->validated();
-        $data['recorded_by_id'] = auth()->id();
-
-        $consumption = InventoryConsumption::create($data);
-
-        // Update inventory stock (observer will also handle this, but we trigger explicitly)
-        $item = InventoryItem::find($data['inventory_item_id']);
-        $item->quantity_in_stock -= $data['quantity_used'];
-        $item->quantity_used += $data['quantity_used'];
-        $item->save();
-
-        // Update batch metrics if batch is linked
-        if ($data['poultry_batch_id'] ?? false) {
-            $batch = Batch::find($data['poultry_batch_id']);
-            $batch->updateCachedMetrics();
-        }
-
-        return redirect()->route('poultry.inventory.show', $data['inventory_item_id'])
-            ->with('success', 'Inventory consumption recorded.');
-    }
-
-    /**
-     * Remove the specified consumption.
-     */
-    public function destroy(InventoryConsumption $consumption)
-    {
-        Gate::authorize('delete', $consumption);
-
-        $itemId = $consumption->inventory_item_id;
-        $batchId = $consumption->poultry_batch_id;
-
-        // Restore stock
-        $item = InventoryItem::find($itemId);
-        if ($item) {
-            $item->quantity_in_stock += $consumption->quantity_used;
-            $item->quantity_used -= $consumption->quantity_used;
-            $item->save();
-        }
-
-        $consumption->delete();
-
-        if ($batchId) {
-            $batch = Batch::find($batchId);
-            if ($batch) {
-                $batch->updateCachedMetrics();
+            if ($request->status === 'out') {
+                $query->where('quantity_in_stock', '<=', 0);
             }
         }
 
-        return redirect()->route('poultry.inventory.show', $itemId)
-            ->with('success', 'Consumption record deleted.');
+        $items = $query->orderBy('name')->paginate(20);
+        $totalValue = $items->sum(fn ($item) => (float) $item->quantity_in_stock * (float) $item->cost_per_unit);
+
+        return view('sectors.poultry.inventory.index', compact('items', 'totalValue'));
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     */
+    public function create()
+    {
+        Gate::authorize('create', InventoryItem::class);
+
+        return view('sectors.poultry.forms.inventory-item');
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(InventoryItemRequest $request)
+    {
+        Gate::authorize('create', InventoryItem::class);
+
+        $validated = $request->validated();
+        $validated['created_by_id'] = auth()->id();
+        $validated['status'] = 'active';
+
+        $item = InventoryItem::create($validated);
+
+        return redirect()->route('poultry.inventory.show', $item)
+            ->with('success', 'Inventory item created successfully.');
+    }
+
+    /**
+     * Display the specified resource.
+     */
+    public function show(InventoryItem $item)
+    {
+        Gate::authorize('view', $item);
+
+        $consumptionHistory = $item->consumptions()
+            ->with('batch', 'recordedBy')
+            ->latest('date')
+            ->limit(20)
+            ->get();
+
+        return view('sectors.poultry.inventory.show', compact('item', 'consumptionHistory'));
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     */
+    public function edit(InventoryItem $item)
+    {
+        Gate::authorize('update', $item);
+
+        return view('sectors.poultry.forms.inventory-item', compact('item'));
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(InventoryItemRequest $request, InventoryItem $item)
+    {
+        Gate::authorize('update', $item);
+
+        $item->update($request->validated());
+
+        return redirect()->route('poultry.inventory.show', $item)
+            ->with('success', 'Inventory item updated successfully.');
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(InventoryItem $item)
+    {
+        Gate::authorize('delete', $item);
+
+        $item->delete();
+
+        return redirect()->route('poultry.inventory.index')
+            ->with('success', 'Inventory item deleted.');
+    }
+
+    /**
+     * Mark an inventory item as killed.
+     */
+    public function kill(Request $request, InventoryItem $item)
+    {
+        Gate::authorize('update', $item);
+
+        $item->status = 'killed';
+        $item->is_active = false;
+        $item->killed_by_id = auth()->id();
+        $item->killed_at = now();
+        $item->killed_reason = $request->input('reason');
+        $item->save();
+
+        return redirect()->route('poultry.inventory.show', $item)
+            ->with('success', 'Inventory item marked as killed.');
+    }
+
+    /**
+     * Recalculate historical costs for the item.
+     */
+    public function recalculateCosts(InventoryItem $item)
+    {
+        Gate::authorize('update', $item);
+
+        foreach ($item->consumptions as $consumption) {
+            $consumption->unit_cost_at_time = $item->cost_per_unit;
+            $consumption->total_cost = $consumption->quantity_used * $item->cost_per_unit;
+            $consumption->save();
+        }
+
+        return redirect()->back()->with('success', 'Historical inventory costs recalculated.');
     }
 }

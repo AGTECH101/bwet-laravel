@@ -19,10 +19,19 @@ class SystemService
         ];
 
         foreach ($defaults as $var) {
-            SystemVariable::firstOrCreate(
-                ['key' => $var['key']],
-                $var
-            );
+            $existing = SystemVariable::where('key', $var['key'])
+                ->orderByDesc('effective_from')
+                ->orderByDesc('updated_at')
+                ->first();
+
+            if (!$existing) {
+                SystemVariable::create(array_merge($var, ['effective_from' => now()]));
+                continue;
+            }
+
+            if ((string) $existing->value !== (string) $var['value']) {
+                SystemVariable::create(array_merge($var, ['effective_from' => now()]));
+            }
         }
     }
 }

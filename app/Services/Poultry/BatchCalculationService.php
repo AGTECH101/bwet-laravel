@@ -6,11 +6,18 @@ use App\Models\Poultry\Batch;
 use App\Models\SystemVariable;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class BatchCalculationService
 {
-    public static function calculateRequiredSampleSize(int $remainingFlock): int
+    public static function calculateRequiredSampleSize(?int $remainingFlock): int
     {
+        $remainingFlock = max(0, (int) ($remainingFlock ?? 0));
+
+        if ($remainingFlock <= 0) {
+            return 0;
+        }
+
         $tenPercent = $remainingFlock * 0.1;
         $required = (int) ceil($tenPercent);
         return min(max($required, 5), 10);
@@ -101,10 +108,20 @@ class BatchCalculationService
 
     public static function calculateTotalInvestment(Batch $batch): float
     {
-        $total = $batch->initial_chicken_cost;
-        $expenses = $batch->expenses()->sum('amount') ?? 0;
-        $consumptions = $batch->inventoryConsumptions()->sum('total_cost') ?? 0;
-        return (float) ($total + $expenses + $consumptions);
+        $total = (float) ($batch->initial_chicken_cost ?? 0);
+
+        if (! $batch->exists) {
+            return $total;
+        }
+
+        if (! Schema::hasTable('expenses') || ! Schema::hasTable('inventory_consumptions')) {
+            return $total;
+        }
+
+        $expenses = (float) ($batch->expenses()->sum('amount') ?? 0);
+        $consumptions = (float) ($batch->inventoryConsumptions()->sum('total_cost') ?? 0);
+
+        return $total + $expenses + $consumptions;
     }
 
     public static function allocateCostForSlaughter(Batch $batch, int $numberSlaughtered, ?int $oldRemaining = null, ?float $oldTotalInvestment = null): float

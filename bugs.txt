@@ -5,3 +5,71 @@ Study-only log. No code changes yet. Use this file to record confirmed mismatche
 
 Start of audit: 2026-08-14
 
+Study findings discovered from the pasted app + routes + migrations snapshot (no fixes applied yet):
+
+1) Duplicate/incorrect controller class definitions in the Sector flow
+   File(s): app/Http/Controllers/General/SectorController.php; app/Http/Controllers/General/SectorSelectionController.php
+   Issue: The pasted SectorSelectionController file contains a stray earlier class named SectorController and then a second proper SectorSelectionController class in the same file. This suggests copy-paste duplication or a broken controller file split during conversion. This can easily produce confusing controller resolution and wrong class usage.
+   Why it matters: The app is meant to keep sector selection logic separate from generic sector listing logic, but the conversion appears to have merged them.
+
+2) Route middleware is effectively locking the app behind email verification, while Fortify email verification is disabled
+   File(s): routes/web.php; config/fortify.php
+   Issue: routes/web.php gates authenticated routes with ['auth', 'verified', 'sector.selected'], but config/fortify.php has Features::emailVerification() commented out.
+   Why it matters: If email verification is not enabled, the verified middleware can block all access for normal app users, even after successful login.
+
+3) Missing Gate abilities for admin-only checks used in the sidebar and controllers
+   File(s): app/Providers/AuthServiceProvider.php; resources/views/partials/sidebar.blade.php; app/Http/Controllers/General/ExportController.php
+   Issue: The gate definitions shown only cover manage-users, manage-system-variables, and manage-market-prices. But the codebase also calls Gate::authorize('export') and uses @can('viewAny', Batch::class), @can('create', FlockRecord::class), @can('viewAny', InventoryItem::class), etc. without evidence of matching policy methods or gate definitions in the pasted file set.
+   Why it matters: Unmatched abilities silently deny access, which breaks role-based functionality without clear errors.
+
+4) Incorrect model import/namespace use in the general history controller
+   File(s): app/Http/Controllers/General/HistoryQueryController.php
+   Issue: The controller imports/use statement is App\Models\Batch, but the actual poultry model is App\Models\Poultry\Batch.
+   Why it matters: This is a classic conversion mismatch and will fail when creating history filters or loading active batches.
+
+5) File/class mismatch in the Poultry inventory controller area
+   File(s): app/Http/Controllers/Poultry/InventoryController.php; app/Http/Controllers/Poultry/InventoryConsumptionController.php
+   Issue: The file pasted for InventoryController contains InventoryConsumptionController methods and logic, including store() and destroy() for inventory consumption records. That is a strong sign of a file misplacement or copy-paste error during conversion.
+   Why it matters: The class name and method responsibilities do not match the file location, which is the kind of drift that breaks resource routing and makes the code difficult to maintain.
+
+6) Controller calls a method on the Eloquent model that is not defined on that model
+   File(s): app/Http/Controllers/Poultry/WeightRecordController.php; app/Models/Poultry/WeightRecord.php
+   Issue: WeightRecordController::store() and update() call $record->calculateMetrics(); but the calculateMetrics() method shown in the pasted controller is defined on the controller class, not the WeightRecord model.
+   Why it matters: This will fail at runtime with a method-not-found error on the model instance.
+
+7) User admin deactivation uses a column that is not in the user migration schema
+   File(s): app/Http/Controllers/General/AdminUserController.php; database/migrations/2026_08_12_042006_add_fields_to_users_table.php
+   Issue: deactivation sets is_active = false, but the user migration adds role, phone, farm_location, is_approved, approved_by_id, and approved_at; there is no is_active field.
+   Why it matters: This will either silently fail or break when the code tries to write to a non-existent column.
+
+8) Duplicate migration files for the same Fortify user feature create a high risk of migration drift
+   File(s): database/migrations/2026_08_12_041710_add_two_factor_columns_to_users_table.php; database/migrations/2026_08_12_102904_add_two_factor_columns_to_users_table.php; database/migrations/2026_08_12_041711_create_passkeys_table.php; database/migrations/2026_08_12_102905_create_passkeys_table.php
+   Issue: There are duplicate migration files for the same two-factor and passkeys setup, with different timestamps.
+   Why it matters: Running migrations in order may create duplicate columns or duplicate tables, and the project will become fragile across fresh installs.
+
+9) Duplicate observer logic is appearing in the wrong layer
+   File(s): app/Observers/Poultry/*; app/Services/Poultry/*
+   Issue: The project contains both app/Observers/Poultry/BatchObserver.php etc. and duplicate versions under app/Services/Poultry/BatchObserver.php, FeedRecordObserver.php, InventoryConsumptionObserver.php.
+   Why it matters: This is a sign of a partial conversion where logic was copied into the wrong architectural layer, and the active registration may not be the one intended.
+
+10) Inconsistent route naming and controller behavior around queue/notifications and sector config
+   File(s): routes/web.php; app/Http/Controllers/General/NotificationController.php; app/Http/Controllers/General/DashboardController.php
+   Issue: The route definitions use a verified, sector-selected flow, but the controllers are still using older assumptions (such as direct dashboard role view names and notification id parameter types) without verifying the app state that those routes depend on.
+   Why it matters: This is a high-risk conversion issue, particularly when multiple route and auth assumptions are being mixed together.
+
+11) Dynamic dashboard view names need validation against the actual Blade files
+   File(s): app/Http/Controllers/General/DashboardController.php
+   Issue: The controller builds a view name like general.dashboard.{role} (admin, manager, staff, investor) and then returns view($view, $data).
+   Why it matters: This is exactly the kind of bug that breaks when the view folder exists but the actual file names differ or the folder is not a Blade file. This must be checked against resources/views/general/dashboard/* once the view files are uploaded.
+
+12) The file set shows a likely app-level namespace drift around Batch imports and generic models
+   File(s): app/Models/*; app/Services/*; app/Http/Controllers/*
+   Issue: The project mixes App\Models\Batch, App\Models\HistoryQuery, App\Models\ObservationReport, App\Models\SystemVariable, App\Models\MarketPrice, App\Models\Sector, and App\Models\Poultry\Batch interchangeably without a clear convention in all files.
+   Why it matters: This is a conversion smell and may cause hidden breakage depending on which file is being loaded and which namespace is active.
+
+Pending verification list (not yet confirmed as a bug until the view files are pasted):
+- The dynamic role-based dashboard views under resources/views/general/dashboard/* may not match the controller's expected files.
+- The sidebar @can checks must be validated against actual policy classes and gate names before fixing them.
+- The route names must be reconciled against the real named routes once the remaining view files and auth policies are uploaded.
+
+End of study findings snapshot.

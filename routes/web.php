@@ -64,6 +64,8 @@ Route::middleware(['auth', 'verified', 'sector.selected'])->group(function () {
     // Admin user management
     Route::middleware('can:manage-users')->group(function () {
         Route::get('/admin/users', [AdminUserController::class, 'index'])->name('admin.users.index');
+        Route::get('/admin/users/create', [AdminUserController::class, 'create'])->name('admin.users.create');
+        Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::post('/admin/users/{user}/approve', [AdminUserController::class, 'approve'])->name('admin.users.approve');
         Route::post('/admin/users/{user}/deactivate', [AdminUserController::class, 'deactivate'])->name('admin.users.deactivate');
     });

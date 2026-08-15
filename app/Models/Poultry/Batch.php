@@ -114,7 +114,12 @@ class Batch extends Model
     // Business logic delegates to services
     public function calculateRequiredSampleSize(): int
     {
-        return BatchCalculationService::calculateRequiredSampleSize($this->remaining_flock);
+        return BatchCalculationService::calculateRequiredSampleSize($this->remaining_flock ?? null);
+    }
+
+    public function calculateTotalInvestment(): float
+    {
+        return BatchCalculationService::calculateTotalInvestment($this);
     }
 
     public function getCurrentAverageWeight(): float

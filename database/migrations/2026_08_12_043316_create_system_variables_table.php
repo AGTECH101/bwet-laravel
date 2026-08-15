@@ -11,13 +11,14 @@ return new class extends Migration
         Schema::create('system_variables', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('key')->unique();
+            $table->string('key');
             $table->string('category', 20)->default('general');
             $table->string('value');
             $table->string('data_type', 20)->default('decimal');
             $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
             $table->foreignId('updated_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('effective_from')->nullable();
             $table->timestamps();
         });
     }

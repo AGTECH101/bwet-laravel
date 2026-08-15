@@ -38,14 +38,23 @@
                 <div><p class="text-sm font-medium text-gray-600">Avg. FCR</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgFcr ?? 0, 3) }}</p></div>
                 <div class="w-12 h-12 rounded-lg bg-blue-500 flex items-center justify-center"><i class="fas fa-chart-line text-white text-xl"></i></div>
             </div>
-            <div class="mt-4 text-sm {{ ($avgFcr ?? 0) < 1.8 ? 'text-green-600' : (($avgFcr ?? 0) < 2.0 ? 'text-yellow-600' : 'text-red-600') }}">
-                {{ ($avgFcr ?? 0) < 1.8 ? 'Excellent' : (($avgFcr ?? 0) < 2.0 ? 'Good' : 'Needs Improvement') }}
+            @php
+                $avgFcrValue = $avgFcr ?? 0;
+                $fcrStatusClass = $avgFcrValue < 1.8 ? 'text-green-600' : ($avgFcrValue < 2.0 ? 'text-yellow-600' : 'text-red-600');
+                $fcrStatusText = $avgFcrValue < 1.8 ? 'Excellent' : ($avgFcrValue < 2.0 ? 'Good' : 'Needs Improvement');
+            @endphp
+            <div class="mt-4 text-sm {{ $fcrStatusClass }}">
+                {{ $fcrStatusText }}
             </div>
         </div>
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
                 <div><p class="text-sm font-medium text-gray-600">Avg. Mortality</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgMortality ?? 0, 1) }}%</p></div>
-                <div class="w-12 h-12 rounded-lg {{ ($avgMortality ?? 0) < 5 ? 'bg-green-500' : (($avgMortality ?? 0) < 8 ? 'bg-yellow-500' : 'bg-red-500') }} flex items-center justify-center">
+                @php
+                $avgMortalityValue = $avgMortality ?? 0;
+                $mortalityBadgeClass = $avgMortalityValue < 5 ? 'bg-green-500' : ($avgMortalityValue < 8 ? 'bg-yellow-500' : 'bg-red-500');
+            @endphp
+            <div class="w-12 h-12 rounded-lg {{ $mortalityBadgeClass }} flex items-center justify-center">
                     <i class="fas fa-chart-pie text-white text-xl"></i>
                 </div>
             </div>
@@ -93,9 +102,14 @@
                         <td class="px-6 py-4 text-sm {{ ($perf['mortality'] ?? 0) < 5 ? 'text-green-600' : 'text-red-600' }}">{{ number_format($perf['mortality'] ?? 0, 1) }}%</td>
                         <td class="px-6 py-4 text-sm {{ ($perf['profit_percent'] ?? 0) > 20 ? 'text-green-600' : 'text-yellow-600' }}">{{ number_format($perf['profit_percent'] ?? 0, 1) }}%</td>
                         <td class="px-6 py-4">
+                            @php
+                                $profitPercent = (float) ($perf['profit_percent'] ?? 0);
+                                $performanceScore = (($profitPercent + 20) / 2);
+                                $performanceClass = $performanceScore > 70 ? 'bg-green-500' : ($performanceScore > 50 ? 'bg-yellow-500' : 'bg-red-500');
+                            @endphp
                             <div class="w-24 bg-gray-200 rounded-full h-2">
-                                <div class="h-2 rounded-full {{ (($perf['profit_percent'] ?? 0) + 20) / 2 > 70 ? 'bg-green-500' : (($perf['profit_percent'] ?? 0) + 20) / 2 > 50 ? 'bg-yellow-500' : 'bg-red-500' }}"
-                                     style="width: {{ min((($perf['profit_percent'] ?? 0) + 20) / 2, 100) }}%"></div>
+                                <div class="h-2 rounded-full {{ $performanceClass }}"
+                                     style="width: {{ min($performanceScore, 100) }}%"></div>
                             </div>
                         </td>
                     </tr>
@@ -124,8 +138,8 @@
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Areas for Improvement</h3>
             @forelse($improvementAreas ?? [] as $area)
             <div class="p-3 bg-red-50 rounded-lg border border-red-100 mb-2">
-                <p class="text-sm font-medium text-gray-900">{{ $area['batch'] }}</p>
-                <p class="text-xs text-red-600">{{ $area['issue'] }}</p>
+                <p class="text-sm font-medium text-gray-900">{{ $area['batch'] ?? 'Batch' }}</p>
+                <p class="text-xs text-red-600">{{ $area['issue'] ?? 'Needs attention' }}</p>
             </div>
             @empty
             <p class="text-sm text-gray-500">All batches performing well</p>

@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             PenSeeder::class,
             UserSeeder::class,
             PoultryTestDataSeeder::class, // optional test data
+            FullDatabaseSeeder::class, 
         ]);
     }
 }

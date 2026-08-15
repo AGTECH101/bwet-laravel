@@ -131,7 +131,7 @@
                             <a href="{{ route('poultry.inventory.show', $item) }}" class="text-primary-600 hover:text-primary-900 mr-2"><i class="fas fa-eye"></i></a>
                             <a href="{{ route('poultry.forms.inventory-consumption.create', ['inventory_item' => $item->id]) }}" class="text-green-600 hover:text-green-900 mr-2"><i class="fas fa-minus-circle"></i></a>
                             @if($item->status !== 'killed')
-                            <a href="{{ route('poultry.inventory.kill', $item) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Kill this item?')"><i class="fas fa-skull-crossbones"></i></a>
+                            <a href="{{ route('poultry.inventory.kill', ['item' => $item->id]) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Kill this item?')"><i class="fas fa-skull-crossbones"></i></a>
                             @endif
                         </td>
                     </tr>

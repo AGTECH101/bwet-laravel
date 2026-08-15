@@ -44,13 +44,14 @@ class SystemVariableController extends Controller
             'is_active' => 'nullable|boolean',
         ]);
 
-        $variable->value = $request->value;
-        $variable->description = $request->description;
-        $variable->is_active = $request->has('is_active');
-        $variable->updated_by_id = auth()->id();
-        $variable->save();
+        $newVariable = $variable->replicate();
+        $newVariable->value = $request->value;
+        $newVariable->description = $request->description;
+        $newVariable->is_active = $request->has('is_active');
+        $newVariable->updated_by_id = auth()->id();
+        $newVariable->effective_from = now();
+        $newVariable->save();
 
-        // Clear cache for this variable
         \Illuminate\Support\Facades\Cache::forget("system_var_{$variable->key}");
 
         return redirect()->route('system.variables.index')

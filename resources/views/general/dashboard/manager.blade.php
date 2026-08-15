@@ -242,9 +242,10 @@
 document.addEventListener('DOMContentLoaded', function() {
     const ctx = document.getElementById('managerPerformanceChart');
     if (ctx) {
-        const batchNames = {!! json_encode(($batches ?? [])->pluck('batch_id')->toArray()) !!};
-        const cfcrData = {!! json_encode(($batches ?? [])->pluck('current_cfcr')->toArray()) !!};
-        const profitData = {!! json_encode(($batches ?? [])->pluck('current_marginal_profit_percent')->toArray()) !!};
+        const batchCollection = {!! json_encode($batches ?? []) !!};
+        const batchNames = batchCollection.map(batch => batch.batch_id);
+        const cfcrData = batchCollection.map(batch => batch.current_cfcr);
+        const profitData = batchCollection.map(batch => batch.current_marginal_profit_percent);
 
         new Chart(ctx, {
             type: 'bar',

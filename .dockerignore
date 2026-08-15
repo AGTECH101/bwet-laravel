@@ -1,0 +1,14 @@
+node_modules
+vendor
+.git
+.gitignore
+.env
+.env.*
+Dockerfile
+README.md
+npm-debug.log
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+bootstrap/cache/*

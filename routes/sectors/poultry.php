@@ -58,6 +58,9 @@ Route::prefix('poultry')->name('poultry.')->middleware(['auth', 'verified'])->gr
     // Form Hub (convenience)
     Route::get('forms/hub', [\App\Http\Controllers\Poultry\FormHubController::class, 'index'])->name('forms.hub');
 
+    Route::get('forms/price-calculator/create', [\App\Http\Controllers\Poultry\PriceCalculatorController::class, 'create'])->name('forms.price-calculator.create');
+    Route::post('forms/price-calculator/calculate', [\App\Http\Controllers\Poultry\PriceCalculatorController::class, 'calculate'])->name('forms.price-calculator.calculate');
+
     // Individual form routes (you might redirect to resources or use specific controllers)
     Route::get('forms/flock-record/create', [FlockRecordController::class, 'create'])->name('forms.flock-record.create');
     Route::post('forms/flock-record', [FlockRecordController::class, 'store'])->name('forms.flock-record.store');

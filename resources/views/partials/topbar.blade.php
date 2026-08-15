@@ -17,7 +17,7 @@
                 <div class="relative" x-data="{ open: false }">
                     <button @click="open = !open" class="p-2 text-gray-400 hover:text-gray-500 relative">
                         <i class="fas fa-bell h-6 w-6"></i>
-                        @if($unreadNotificationsCount ?? 0 > 0)
+                        @if(($unreadNotificationsCount ?? 0) > 0)
                             <span class="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-400"></span>
                         @endif
                     </button>

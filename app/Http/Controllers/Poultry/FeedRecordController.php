@@ -18,11 +18,16 @@ class FeedRecordController extends Controller
         return view('sectors.poultry.feed-records.index', compact('batch', 'records'));
     }
 
-    public function create(Batch $batch)
+    public function create(?Batch $batch = null)
     {
         Gate::authorize('create', FeedRecord::class);
+
+        $batches = Batch::query()
+            ->orderBy('start_date', 'desc')
+            ->get();
+
         $inventoryItems = InventoryItem::where('category', 'feed')->where('is_active', true)->get();
-        return view('sectors.poultry.feed-records.create', compact('batch', 'inventoryItems'));
+        return view('sectors.poultry.feed-records.create', compact('batch', 'batches', 'inventoryItems'));
     }
 
     public function store(FeedRecordRequest $request)

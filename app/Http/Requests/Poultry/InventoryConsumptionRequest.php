@@ -20,4 +20,29 @@ class InventoryConsumptionRequest extends FormRequest
             'date' => 'required|date',
         ];
     }
+
+    public function withValidator($validator)
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->any()) {
+                return;
+            }
+
+            $itemId = $this->input('inventory_item_id');
+            $quantityUsed = (float) $this->input('quantity_used', 0);
+
+            if (! $itemId) {
+                return;
+            }
+
+            $item = \App\Models\Poultry\InventoryItem::find($itemId);
+            if (! $item) {
+                return;
+            }
+
+            if ($quantityUsed > (float) $item->quantity_in_stock) {
+                $validator->errors()->add('quantity_used', 'Usage cannot exceed the remaining inventory quantity left (available: ' . number_format((float) $item->quantity_in_stock, 3) . ' ' . $item->unit . ').');
+            }
+        });
+    }
 }

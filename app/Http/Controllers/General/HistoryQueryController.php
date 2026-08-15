@@ -4,7 +4,7 @@ namespace App\Http\Controllers\General;
 
 use App\Http\Controllers\Controller;
 use App\Models\HistoryQuery;
-use App\Models\Batch;
+use App\Models\Poultry\Batch;
 use App\Models\User;
 use App\Services\HistoryQueryService;
 use Illuminate\Http\Request;

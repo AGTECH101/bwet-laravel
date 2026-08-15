@@ -18,11 +18,17 @@ class WeightRecordController extends Controller
         return view('sectors.poultry.weight-records.index', compact('batch', 'records'));
     }
 
-    public function create(Batch $batch)
+    public function create(?Batch $batch = null)
     {
         Gate::authorize('create', WeightRecord::class);
-        $requiredSample = $batch->calculateRequiredSampleSize();
-        return view('sectors.poultry.weight-records.create', compact('batch', 'requiredSample'));
+
+        $batches = Batch::query()
+            ->orderBy('start_date', 'desc')
+            ->get();
+
+        $requiredSample = $batch ? $batch->calculateRequiredSampleSize() : 0;
+
+        return view('sectors.poultry.weight-records.create', compact('batch', 'batches', 'requiredSample'));
     }
 
     public function store(WeightRecordRequest $request)
@@ -30,12 +36,34 @@ class WeightRecordController extends Controller
         Gate::authorize('create', WeightRecord::class);
 
         $data = $request->validated();
+        $weights = $data['individual_weights'] ?? [];
+
+        if (is_array($weights) && count($weights) >= 2) {
+            $numericWeights = array_values(array_filter(array_map(static fn ($item) => is_numeric($item) ? (float) $item : null, $weights), static fn ($item) => $item !== null));
+            $mean = array_sum($numericWeights) / count($numericWeights);
+            $variance = array_sum(array_map(static fn ($weight) => ($weight - $mean) ** 2, $numericWeights)) / count($numericWeights);
+            $stdDev = sqrt($variance);
+            $cv = $mean > 0 ? ($stdDev / $mean) * 100 : 0;
+
+            if ($cv >= 15) {
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['individual_weights' => 'High weight variation detected (CV >= 15%). Please re-take the sample before saving.']);
+            }
+        }
+
         $data['recorded_by_id'] = auth()->id();
 
-        $record = WeightRecord::create($data);
-        $record->calculateMetrics(); // defined in model?
-        $record->save();
+        $record = new WeightRecord($data);
+        $record->calculateMetrics();
 
+        if ($record->cv_status === 'rejected' || $record->is_valid_sample === false) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['individual_weights' => 'High weight variation detected (CV >= 15%). Please re-take the sample before saving.']);
+        }
+
+        $record->save();
         $record->batch->updateCachedMetrics();
 
         return redirect()->route('poultry.batches.show', $record->batch)
@@ -52,66 +80,20 @@ class WeightRecordController extends Controller
     {
         Gate::authorize('update', $weightRecord);
 
-        $weightRecord->update($request->validated());
+        $weightRecord->fill($request->validated());
         $weightRecord->calculateMetrics();
+
+        if ($weightRecord->cv_status === 'rejected' || $weightRecord->is_valid_sample === false) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['individual_weights' => 'High weight variation detected (CV >= 15%). Please re-take the sample before saving.']);
+        }
+
         $weightRecord->save();
         $weightRecord->batch->updateCachedMetrics();
 
         return redirect()->route('poultry.batches.show', $weightRecord->batch)
             ->with('success', 'Weight record updated.');
-    }
-
-        public function calculateMetrics(): void
-    {
-        $weights = $this->individual_weights ?? [];
-        if (empty($weights)) {
-            return;
-        }
-
-        $num = count($weights);
-        $this->birds_weighed = $num;
-        $this->total_weight = array_sum($weights);
-        $this->average_weight = $this->total_weight / $num;
-
-        // CV
-        $mean = $this->average_weight;
-        $variance = array_sum(array_map(fn($w) => ($w - $mean) ** 2, $weights)) / $num;
-        $stddev = sqrt($variance);
-        $cv = $mean > 0 ? ($stddev / $mean) * 100 : 0;
-        $this->coefficient_variation = round($cv, 2);
-
-        // CV status
-        if ($cv >= 15) {
-            $this->cv_status = 'rejected';
-            $this->is_valid_sample = false;
-        } elseif ($cv >= 12) {
-            $this->cv_status = 'warning';
-            $this->is_valid_sample = true;
-        } elseif ($cv >= 10) {
-            $this->cv_status = 'caution';
-            $this->is_valid_sample = true;
-        } else {
-            $this->cv_status = 'excellent';
-            $this->is_valid_sample = true;
-        }
-
-        // Expected weight (just a placeholder)
-        $this->expected_weight = $this->calculateExpectedWeight();
-    }
-
-    protected function calculateExpectedWeight(): float
-    {
-        // Simple growth curve placeholder
-        $age = $this->batch?->current_age_days ?? 0;
-        if ($age <= 0) return 0.045;
-        if ($age <= 7) return 0.18;
-        if ($age <= 14) return 0.45;
-        if ($age <= 21) return 0.85;
-        if ($age <= 28) return 1.30;
-        if ($age <= 35) return 1.80;
-        if ($age <= 42) return 2.20;
-        if ($age <= 49) return 2.50;
-        return 2.70;
     }
 
     public function destroy(WeightRecord $weightRecord)

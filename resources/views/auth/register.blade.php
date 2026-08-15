@@ -7,9 +7,7 @@
     <div class="max-w-md w-full space-y-8">
         <div>
             <div class="flex justify-center">
-                <div class="w-16 h-16 rounded-full bg-primary-500 flex items-center justify-center text-white text-2xl font-bold">
-                    B
-                </div>
+                <img src="{{ asset('favicon.ico') }}" alt="BWET Farms logo" class="w-16 h-16 rounded-full object-cover shadow-md border border-gray-200 bg-white">
             </div>
             <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
                 Create your account
@@ -35,6 +33,22 @@
                     <input id="email" name="email" type="email" autocomplete="email" required
                            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
                            placeholder="Email address" value="{{ old('email') }}">
+                </div>
+                <div>
+                    <label for="phone" class="sr-only">Phone Number</label>
+                    <input id="phone" name="phone" type="tel" autocomplete="tel" required
+                           class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                           placeholder="Phone number" value="{{ old('phone') }}">
+                </div>
+                <div>
+                    <label for="role" class="sr-only">Role</label>
+                    <select id="role" name="role" required
+                            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm">
+                        <option value="">Select role</option>
+                        <option value="manager" {{ old('role') == 'manager' ? 'selected' : '' }}>Manager</option>
+                        <option value="staff" {{ old('role') == 'staff' ? 'selected' : '' }}>Staff</option>
+                        <option value="investor" {{ old('role') == 'investor' ? 'selected' : '' }}>Investor</option>
+                    </select>
                 </div>
                 <div>
                     <label for="password" class="sr-only">Password</label>
