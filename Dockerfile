@@ -6,9 +6,12 @@ RUN apk add --no-cache \
     git \
     unzip \
     libpng-dev \
+    libjpeg-turbo-dev \
+    freetype-dev \
     libzip-dev \
     oniguruma-dev \
     libxml2-dev \
+    pkgconf \
     sqlite \
     curl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
