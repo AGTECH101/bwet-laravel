@@ -28,9 +28,9 @@ if [ -f "$APP_ROOT/artisan" ]; then
     php artisan migrate --force >/dev/null 2>&1 || true
 fi
 
-mkdir -p /run/nginx /etc/nginx/conf.d
+mkdir -p /run/nginx /etc/nginx/http.d
 
-sed -e "s|\${PORT}|${PORT}|g" "$TEMPLATE_FILE" > /etc/nginx/conf.d/default.conf
+sed -e "s|\${PORT}|${PORT}|g" "$TEMPLATE_FILE" > /etc/nginx/http.d/default.conf
 
 php-fpm -D
 exec nginx -g 'daemon off;'
