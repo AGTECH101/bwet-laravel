@@ -3,6 +3,8 @@ FROM php:8.2-fpm-alpine
 WORKDIR /var/www
 
 RUN apk add --no-cache \
+    bash \
+    nginx \
     git \
     unzip \
     libpng-dev \
@@ -25,8 +27,11 @@ RUN composer install --no-interaction --prefer-dist --no-progress --no-scripts -
     && composer dump-autoload --optimize \
     && mkdir -p /var/www/database /var/www/storage /var/www/bootstrap/cache \
     && touch /var/www/database/database.sqlite \
-    && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/database /var/www/public
+    && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/database /var/www/public \
+    && mkdir -p /run/nginx \
+    && cp /var/www/docker/nginx/default.conf.template /etc/nginx/conf.d/default.conf \
+    && rm -f /etc/nginx/http.d/default.conf
 
-EXPOSE 9000
+EXPOSE 8080
 
-CMD ["php-fpm"]
+CMD ["/bin/sh", "/var/www/docker/start.sh"]
