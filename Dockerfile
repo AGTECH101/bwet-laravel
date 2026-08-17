@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     oniguruma-dev \
     libxml2-dev \
     pkgconf \
-    sqlite \
+    sqlite-dev \
     curl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install pdo_sqlite gd zip \
