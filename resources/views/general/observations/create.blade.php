@@ -17,7 +17,7 @@
 @endsection
 
 @section('content')
-<div class="max-w-3xl mx-auto">
+<div class="max-w-4xl mx-auto">
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <form method="POST" action="{{ route('observations.store') }}" class="space-y-6">
             @csrf
@@ -84,6 +84,7 @@
         </form>
     </div>
 </div>
+@endsection
 
 @push('scripts')
 <script>

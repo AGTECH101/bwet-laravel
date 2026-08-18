@@ -21,12 +21,12 @@
     <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <h3 class="text-lg font-semibold text-gray-900">Returned Records</h3>
         <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
-            {{ $results->count() ?? 0 }} records
+            {{ is_countable($results ?? []) ? count($results) : 0 }} records
         </span>
     </div>
 
     <div class="p-6">
-        @if(($results ?? collect())->isNotEmpty())
+        @if((is_array($results ?? []) ? count($results) : (($results ?? collect())->isNotEmpty())) > 0)
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">

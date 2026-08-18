@@ -16,7 +16,7 @@
             <i class="fas fa-minus-circle mr-2"></i> Use Item
         </a>
         @can('update', $item)
-        <a href="{{ route('poultry.inventory.edit', ['inventory' => $item->id]) }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+        <a href="{{ route('poultry.inventory.edit', $item) }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
             <i class="fas fa-edit mr-2"></i> Edit
         </a>
         @endcan
@@ -151,7 +151,7 @@
         <!-- Actions -->
         <div class="mt-6 flex gap-3">
             @if($item->status !== 'killed')
-            <form method="POST" action="{{ route('poultry.inventory.kill', ['item' => $item->id]) }}" onsubmit="return confirm('Kill this inventory item? This cannot be undone.')">
+            <form method="POST" action="{{ route('poultry.inventory.kill', $item) }}" onsubmit="return confirm('Kill this inventory item? This cannot be undone.')">
                 @csrf
                 <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700">
                     <i class="fas fa-skull-crossbones mr-2"></i> Kill Item
@@ -159,7 +159,7 @@
             </form>
             @endif
             @can('recalculate-costs', $item)
-            <form method="POST" action="{{ route('poultry.inventory.recalculate', ['item' => $item->id]) }}" onsubmit="return confirm('Recalculate all historical costs? This will update all consumption records.')">
+            <form method="POST" action="{{ route('poultry.inventory.recalculate', $item) }}" onsubmit="return confirm('Recalculate all historical costs? This will update all consumption records.')">
                 @csrf
                 <button type="submit" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                     <i class="fas fa-calculator mr-2"></i> Recalculate Costs

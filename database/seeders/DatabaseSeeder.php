@@ -13,8 +13,7 @@ class DatabaseSeeder extends Seeder
             SystemVariableSeeder::class,
             PenSeeder::class,
             UserSeeder::class,
-            PoultryTestDataSeeder::class, // optional test data
-            FullDatabaseSeeder::class, 
+            RealisticFarmSeeder::class,
         ]);
     }
 }

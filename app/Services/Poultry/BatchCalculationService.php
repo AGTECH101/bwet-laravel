@@ -119,7 +119,9 @@ class BatchCalculationService
         }
 
         $expenses = (float) ($batch->expenses()->sum('amount') ?? 0);
-        $consumptions = (float) ($batch->inventoryConsumptions()->sum('total_cost') ?? 0);
+        $consumptions = (float) ($batch->inventoryConsumptions()
+            ->where('source_type', '!=', 'waste')
+            ->sum('total_cost') ?? 0);
 
         return $total + $expenses + $consumptions;
     }
@@ -172,11 +174,9 @@ class BatchCalculationService
             $batch->total_weight_gain = self::calculateTotalWeightGain($batch);
 
             // FCRs
-            if ($batch->total_weight_gain > 0) {
-                $batch->current_cfcr = $batch->total_feed_used / $batch->total_weight_gain;
-            } else {
-                $batch->current_cfcr = 0;
-            }
+            $batch->current_cfcr = ($batch->total_feed_used > 0 && $batch->total_weight_gain > 0)
+                ? $batch->total_feed_used / $batch->total_weight_gain
+                : 0;
             $batch->current_ifcr = self::calculateIFCR($batch);
 
             // Expenses
@@ -236,22 +236,28 @@ class BatchCalculationService
         $endDate = Carbon::today();
         $startDate = $endDate->copy()->subDays($n);
 
-        $recentFeed = $batch->feedRecords()
+        $recentFeed = (float) ($batch->feedRecords()
             ->where('date', '>=', $startDate)
-            ->sum('feed_used') ?? 0;
+            ->sum('feed_used') ?? 0);
 
         $weightRecords = $batch->weightRecords()
             ->where('date', '>=', $startDate)
             ->orderBy('date')
             ->get();
 
-        if ($weightRecords->count() < 2) return 0;
+        if ($weightRecords->count() < 2 || $recentFeed <= 0) {
+            return 0;
+        }
 
         $first = $weightRecords->first();
         $last = $weightRecords->last();
-        $weightGainTotal = ($last->average_weight - $first->average_weight) * $batch->remaining_flock;
+        $weightGainTotal = ($last->average_weight - $first->average_weight) * max(1, $batch->remaining_flock);
 
-        return $weightGainTotal > 0 ? $recentFeed / $weightGainTotal : 999.999;
+        if ($weightGainTotal <= 0) {
+            return 0;
+        }
+
+        return $recentFeed / $weightGainTotal;
     }
 
     private static function calculateDailyMarginalProfitPercent(Batch $batch): float

@@ -23,16 +23,18 @@ class PriceCalculatorController extends Controller
             'target_margin' => 'required|numeric|min:0',
         ]);
 
-        $costPerBird = $request->cost_per_bird;
-        $dressedWeight = $request->dressed_weight;
-        $targetMargin = $request->target_margin;
+        $costPerBird = (float) $request->cost_per_bird;
+        $dressedWeight = (float) $request->dressed_weight;
+        $targetMargin = (float) $request->target_margin;
 
-        $suggestedPricePerKg = ($costPerBird * (1 + $targetMargin / 100)) / $dressedWeight;
-        $minimumPrice = ($costPerBird / $dressedWeight); // break-even
+        $costPerKg = $dressedWeight > 0 ? $costPerBird / $dressedWeight : 0;
+        $minimumPrice = $costPerKg;
+        $suggestedPricePerKg = $costPerKg * (1 + ($targetMargin / 100));
 
         return response()->json([
             'suggested_price_per_kg' => round($suggestedPricePerKg, 2),
             'minimum_price_per_kg' => round($minimumPrice, 2),
+            'cost_per_kg' => round($costPerKg, 2),
             'profit_margin' => $targetMargin,
         ]);
     }

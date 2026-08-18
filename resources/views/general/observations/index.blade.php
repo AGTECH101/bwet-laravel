@@ -108,7 +108,7 @@
                             <a href="{{ route('observations.show', $obs) }}" class="text-primary-600 hover:text-primary-900 mr-2"><i class="fas fa-eye"></i></a>
                             @can('review', $obs)
                             @if($obs->status === 'pending')
-                            <a href="{{ route('observations.review', $obs) }}" class="text-green-600 hover:text-green-900"><i class="fas fa-check"></i></a>
+                            <a href="{{ route('observations.review.form', $obs) }}" class="text-green-600 hover:text-green-900"><i class="fas fa-check"></i></a>
                             @endif
                             @endcan
                         </td>

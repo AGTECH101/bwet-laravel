@@ -36,23 +36,25 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow p-4 border-l-4 border-blue-500">
             <h3 class="text-sm font-medium text-blue-700"><i class="fas fa-hourglass-half mr-1"></i>Age</h3>
-            <p class="text-2xl font-bold text-blue-900 mt-2">{{ $batch->current_age_days }} <span class="text-sm">days</span></p>
+            <p class="text-2xl font-bold text-blue-900 mt-2">{{ max(0, (int) $batch->current_age_days) }} <span class="text-sm">days</span></p>
         </div>
+        @if(auth()->user()->role === 'admin')
         <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg shadow p-4 border-l-4 border-emerald-500">
             <h3 class="text-sm font-medium text-emerald-700"><i class="fas fa-coins mr-1"></i>Cost/Bird</h3>
-            <p class="text-2xl font-bold text-emerald-900 mt-2">{{ format_currency($financialMetrics['cost_per_bird']['value'] ?? 0) }}</p>
+            <p class="text-2xl font-bold text-emerald-900 mt-2">{{ format_currency($financialMetrics['cost_per_bird'] ?? 0) }}</p>
         </div>
         <div class="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-lg shadow p-4 border-l-4 border-cyan-500">
             <h3 class="text-sm font-medium text-cyan-700"><i class="fas fa-weight mr-1"></i>Cost/Kg</h3>
-            <p class="text-2xl font-bold text-cyan-900 mt-2">{{ format_currency($financialMetrics['cost_per_kg']['value'] ?? 0) }}</p>
+            <p class="text-2xl font-bold text-cyan-900 mt-2">{{ format_currency($financialMetrics['cost_per_kg'] ?? 0) }}</p>
         </div>
+        @endif
         <div class="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg shadow p-4 border-l-4 border-amber-500">
-            <h3 class="text-sm font-medium text-amber-700"><i class="fas fa-kiwi-bird mr-1"></i>Sell/Bird</h3>
-            <p class="text-2xl font-bold text-amber-900 mt-2">{{ format_currency($financialMetrics['selling_price_per_bird']['value'] ?? 0) }}</p>
+            <h3 class="text-sm font-medium text-amber-700"><i class="fas fa-kiwi-bird mr-1"></i>{{ auth()->user()->role === 'admin' ? 'Sell/Bird' : 'Recommended Sell/Bird' }}</h3>
+            <p class="text-2xl font-bold text-amber-900 mt-2">{{ format_currency($financialMetrics['selling_price_per_bird'] ?? 0) }}</p>
         </div>
         <div class="bg-gradient-to-br from-rose-50 to-rose-100 rounded-lg shadow p-4 border-l-4 border-rose-500">
-            <h3 class="text-sm font-medium text-rose-700"><i class="fas fa-tag mr-1"></i>Sell/Kg</h3>
-            <p class="text-2xl font-bold text-rose-900 mt-2">{{ format_currency($financialMetrics['selling_price_per_kg']['value'] ?? 0) }}</p>
+            <h3 class="text-sm font-medium text-rose-700"><i class="fas fa-tag mr-1"></i>{{ auth()->user()->role === 'admin' ? 'Sell/Kg' : 'Recommended Sell/Kg' }}</h3>
+            <p class="text-2xl font-bold text-rose-900 mt-2">{{ format_currency($financialMetrics['selling_price_per_kg'] ?? 0) }}</p>
         </div>
     </div>
 

@@ -1,0 +1,39 @@
+BWET Farms final task checklist
+
+Status: Completed for the current iteration
+
+1. Docker / deployment stability
+   - Render-safe nginx and PHP runtime setup were corrected.
+   - HTTPS trust and asset loading were configured for production behind a proxy.
+
+2. Batch and pricing correctness
+   - Batch calculation logic was stabilized and refreshed from live database data.
+   - Profit, cost, and recommended selling-price values are derived from current batch metrics instead of stale dummy values.
+   - Age calculations and flock totals now reflect real records.
+
+3. Form hub and daily operations
+   - Form Hub includes the inventory waste flow.
+   - Batch transfer flow has been added for moving birds between active batches.
+   - Daily operational records are routed through the working poultry form set.
+
+4. Observation flow
+   - Observation routes were corrected to separate the GET review form from the POST submit action.
+   - The review page now loads properly and the form submits through the correct route.
+   - Observation create layout was aligned with the rest of the app.
+
+5. Inventory and waste tracking
+   - Waste records are supported with required reason and notes fields.
+   - Waste source types are allowed without triggering check/enum errors.
+   - Waste records do not inflate batch cost values.
+
+6. Seed data realism
+   - A realistic farm seeder was put in place for sector users, pens, batches, inventory, observations, export records, and operational history.
+   - Seed values were adjusted to keep batches mathematically coherent and aligned with the app’s calculation service.
+
+7. Validation
+   - Focused regression tests for observation review, batch transfer, inventory waste, and poultry view routes passed.
+
+Notes
+- If a fresh local database is needed, run:
+  php artisan migrate:fresh --seed
+- For Render or Docker deployment, confirm the runtime port and HTTPS trust values are set in the environment before launch.

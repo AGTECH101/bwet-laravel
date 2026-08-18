@@ -29,25 +29,30 @@
                 </select>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div>
                     <label for="cost_of_production" class="block text-sm font-medium text-gray-700">Cost of Production</label>
-                    <input type="number" step="0.01" min="0" id="cost_of_production" name="cost_of_production" value="{{ $selectedBatch ? $selectedBatch->total_expenses : 0 }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
+                    <input type="number" step="0.01" min="0" id="cost_of_production" name="cost_of_production" value="{{ $selectedBatch ? round($selectedBatch->calculateTotalInvestment(), 2) : 0 }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
                 </div>
 
                 <div>
                     <label for="current_average_weight" class="block text-sm font-medium text-gray-700">Current Average Weight</label>
-                    <input type="number" step="0.01" min="0.01" id="current_average_weight" name="current_average_weight" value="{{ $selectedBatch ? $selectedBatch->getCurrentAverageWeight() : 0 }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
+                    <input type="number" step="0.01" min="0.01" id="current_average_weight" name="current_average_weight" value="{{ $selectedBatch ? round($selectedBatch->getCurrentAverageWeight(), 2) : 0 }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
                 </div>
 
                 <div>
-                    <label for="mod_weight" class="block text-sm font-medium text-gray-700">Mode Weight</label>
-                    <input type="number" step="0.01" min="0.01" id="mod_weight" name="mod_weight" value="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
+                    <label for="mod_weight" class="block text-sm font-medium text-gray-700">Reference Weight</label>
+                    <input type="number" step="0.01" min="0.01" id="mod_weight" name="mod_weight" value="{{ $selectedBatch ? round($selectedBatch->getCurrentAverageWeight(), 2) : 1 }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
+                </div>
+
+                <div>
+                    <label for="target_margin" class="block text-sm font-medium text-gray-700">Target Margin (%)</label>
+                    <input type="number" step="0.01" min="0" max="100" id="target_margin" name="target_margin" value="{{ $defaultProfitMargin ?? 20 }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
                 </div>
             </div>
 
             <div class="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 border border-gray-200">
-                Formula: (cost_of_production × current_average_weight) ÷ mod_weight
+                Formula: ((cost_of_production ÷ dressed_weight) × (1 + target_margin))
             </div>
 
             <div class="flex justify-end">

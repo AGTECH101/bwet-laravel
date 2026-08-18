@@ -11,9 +11,26 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
+    private static function refreshBatchMetrics($batches): void
+    {
+        if ($batches instanceof \Illuminate\Database\Eloquent\Collection) {
+            $batches->each(fn (Batch $batch) => $batch->updateCachedMetrics());
+            return;
+        }
+
+        if ($batches instanceof Batch) {
+            $batches->updateCachedMetrics();
+        }
+    }
+
     public static function getAdminDashboard()
     {
+        $allBatches = Batch::query()->get();
+        self::refreshBatchMetrics($allBatches);
+
         $recentBatches = Batch::query()->latest('created_at')->limit(5)->get();
+        self::refreshBatchMetrics($recentBatches);
+
         $lowStockItems = InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->get();
         $outOfStockItems = InventoryItem::where('quantity_in_stock', '<=', 0)->get();
 
@@ -43,6 +60,7 @@ class DashboardService
     public static function getManagerDashboard(User $user)
     {
         $batches = Batch::where('status', 'active')->with('createdBy')->get();
+        self::refreshBatchMetrics($batches);
         $lowStockItems = InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->get();
         $outOfStockItems = InventoryItem::where('quantity_in_stock', '<=', 0)->get();
         $todaySchedules = \App\Models\Poultry\WeighingSchedule::with('batch')->whereDate('scheduled_date', today())->where('is_completed', false)->get();

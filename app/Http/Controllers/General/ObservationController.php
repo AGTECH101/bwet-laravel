@@ -86,6 +86,13 @@ class ObservationController extends Controller
         return view('general.observations.show', compact('observation'));
     }
 
+    public function reviewForm(ObservationReport $observation)
+    {
+        Gate::authorize('review', $observation);
+
+        return view('general.observations.review', compact('observation'));
+    }
+
     public function review(Request $request, ObservationReport $observation)
     {
         Gate::authorize('review', $observation);

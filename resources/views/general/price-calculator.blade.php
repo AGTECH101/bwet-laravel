@@ -20,7 +20,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                     <label for="cost_per_bird" class="block text-sm font-medium text-gray-700">Cost per Bird</label>
-                    <input type="number" step="0.01" min="0" id="cost_per_bird" name="cost_per_bird" value="{{ $profitMargin ?? 20 }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
+                    <input type="number" step="0.01" min="0" id="cost_per_bird" name="cost_per_bird" value="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500">
                 </div>
                 <div>
                     <label for="target_margin" class="block text-sm font-medium text-gray-700">Target Margin (%)</label>

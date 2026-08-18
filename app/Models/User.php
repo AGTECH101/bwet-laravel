@@ -41,6 +41,11 @@ class User extends Authenticatable
         return $this->belongsTo(User::class, 'approved_by_id');
     }
 
+    public function notificationReadStatuses()
+    {
+        return $this->hasMany(NotificationReadStatus::class);
+    }
+
     // Relationships to poultry models (if needed)
     public function createdBatches()
     {

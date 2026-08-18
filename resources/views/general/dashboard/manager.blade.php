@@ -15,6 +15,9 @@
         <a href="{{ route('observations.create') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
             <i class="fas fa-clipboard mr-2"></i> Report Observation
         </a>
+        <a href="{{ route('poultry.inventory.waste') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+            <i class="fas fa-trash-alt mr-2"></i> Waste Log
+        </a>
     </div>
 </div>
 @endsection

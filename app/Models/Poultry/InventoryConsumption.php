@@ -13,7 +13,7 @@ class InventoryConsumption extends Model
     protected $fillable = [
         'inventory_item_id', 'poultry_batch_id', 'quantity_used', 'date',
         'unit_cost_at_time', 'total_cost', 'source_type', 'source_id',
-        'recorded_by_id'
+        'recorded_by_id', 'reason', 'notes'
     ];
 
     protected $casts = [

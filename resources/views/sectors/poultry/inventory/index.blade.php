@@ -25,6 +25,9 @@
                 </div>
             </div>
         </div>
+        <a href="{{ route('poultry.inventory.waste') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+            <i class="fas fa-trash-alt mr-2"></i> Waste Log
+        </a>
         <a href="{{ route('poultry.inventory.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
             <i class="fas fa-plus mr-2"></i> New Item
         </a>
@@ -35,19 +38,21 @@
 @section('content')
 <div class="space-y-6">
     <!-- Stats -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-{{ auth()->user()->role === 'admin' ? '3' : '2' }} gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
                 <div><p class="text-sm font-medium text-gray-600">Total Items</p><p class="text-3xl font-bold text-gray-900">{{ $items->count() }}</p></div>
                 <div class="w-12 h-12 rounded-lg bg-primary-500 flex items-center justify-center"><i class="fas fa-boxes text-white text-xl"></i></div>
             </div>
         </div>
+        @if(auth()->user()->role === 'admin')
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
                 <div><p class="text-sm font-medium text-gray-600">Total Value</p><p class="text-3xl font-bold text-gray-900">{{ format_currency($totalValue ?? 0) }}</p></div>
                 <div class="w-12 h-12 rounded-lg bg-green-500 flex items-center justify-center"><i class="fas fa-money-bill-wave text-white text-xl"></i></div>
             </div>
         </div>
+        @endif
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
                 <div><p class="text-sm font-medium text-gray-600">Alerts</p><p class="text-3xl font-bold text-gray-900">{{ $items->filter(fn($i) => $i->isLowStock())->count() }}</p></div>
@@ -95,7 +100,9 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Cost</th>
+                        @if(auth()->user()->role === 'admin')
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Value</th>
+                        @endif
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
@@ -117,7 +124,9 @@
                         <td class="px-6 py-4 whitespace-nowrap"><span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">{{ ucfirst($item->category) }}</span></td>
                         <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-medium">{{ $item->quantity_in_stock }} {{ $item->unit }}</div></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm">{{ format_currency($item->cost_per_unit) }}</td>
+                        @if(auth()->user()->role === 'admin')
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">{{ format_currency($item->quantity_in_stock * $item->cost_per_unit) }}</td>
+                        @endif
                         <td class="px-6 py-4 whitespace-nowrap">
                             @if($item->isOutOfStock())
                             <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">Out of Stock</span>
@@ -131,12 +140,15 @@
                             <a href="{{ route('poultry.inventory.show', $item) }}" class="text-primary-600 hover:text-primary-900 mr-2"><i class="fas fa-eye"></i></a>
                             <a href="{{ route('poultry.forms.inventory-consumption.create', ['inventory_item' => $item->id]) }}" class="text-green-600 hover:text-green-900 mr-2"><i class="fas fa-minus-circle"></i></a>
                             @if($item->status !== 'killed')
-                            <a href="{{ route('poultry.inventory.kill', ['item' => $item->id]) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Kill this item?')"><i class="fas fa-skull-crossbones"></i></a>
+                            <form method="POST" action="{{ route('poultry.inventory.kill', $item) }}" class="inline" onsubmit="return confirm('Kill this item?')">
+                                @csrf
+                                <button type="submit" class="text-red-600 hover:text-red-900 bg-transparent border-0 p-0 cursor-pointer"><i class="fas fa-skull-crossbones"></i></button>
+                            </form>
                             @endif
                         </td>
                     </tr>
                     @empty
-                    <tr><td colspan="7" class="px-6 py-12 text-center text-gray-500">No inventory items found</td></tr>
+                    <tr><td colspan="{{ auth()->user()->role === 'admin' ? '7' : '6' }}" class="px-6 py-12 text-center text-gray-500">No inventory items found</td></tr>
                     @endforelse
                 </tbody>
             </table>

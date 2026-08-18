@@ -16,7 +16,7 @@ return new class extends Migration
             $table->date('date');
             $table->decimal('unit_cost_at_time', 10, 2);
             $table->decimal('total_cost', 12, 2);
-            $table->enum('source_type', ['manual', 'feed', 'expense'])->default('manual');
+            $table->enum('source_type', ['manual', 'feed', 'expense', 'waste'])->default('manual');
             $table->unsignedBigInteger('source_id')->nullable();
             $table->foreignId('recorded_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();

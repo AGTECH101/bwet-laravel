@@ -141,7 +141,7 @@ class InventoryController extends Controller
         $item->save();
 
         return redirect()->route('poultry.inventory.show', $item)
-            ->with('success', 'Inventory item marked as killed.');
+            ->with('success', 'Inventory item marked as killed and deactivated.');
     }
 
     /**

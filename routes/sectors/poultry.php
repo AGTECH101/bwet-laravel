@@ -20,7 +20,8 @@ Route::prefix('poultry')->name('poultry.')->middleware(['auth', 'verified'])->gr
 
     // Batches
     Route::resource('batches', BatchController::class);
-    Route::post('batches/{batch}/export', [BatchController::class, 'export'])->name('batches.export');
+    Route::get('batches/{batch}/export', [BatchController::class, 'export'])->name('batches.export');
+    Route::post('batches/{batch}/export', [BatchController::class, 'export'])->name('batches.export.post');
     Route::post('batches/{batch}/manual-mode', [BatchController::class, 'toggleManualMode'])->name('batches.manual-mode');
 
     // Flock Records
@@ -36,6 +37,7 @@ Route::prefix('poultry')->name('poultry.')->middleware(['auth', 'verified'])->gr
     Route::get('batches/{batch}/feed-records', [FeedRecordController::class, 'index'])->name('batches.feed-records');
 
     // Inventory Items
+    Route::get('inventory/waste', [InventoryConsumptionController::class, 'wasteIndex'])->name('inventory.waste');
     Route::resource('inventory', InventoryController::class);
     Route::post('inventory/{item}/kill', [InventoryController::class, 'kill'])->name('inventory.kill');
     Route::post('inventory/{item}/recalculate-costs', [InventoryController::class, 'recalculateCosts'])->name('inventory.recalculate');
@@ -76,6 +78,12 @@ Route::prefix('poultry')->name('poultry.')->middleware(['auth', 'verified'])->gr
 
     Route::get('forms/inventory-consumption/create', [InventoryConsumptionController::class, 'create'])->name('forms.inventory-consumption.create');
     Route::post('forms/inventory-consumption', [InventoryConsumptionController::class, 'store'])->name('forms.inventory-consumption.store');
+
+    Route::get('forms/inventory-waste/create', [InventoryConsumptionController::class, 'createWaste'])->name('forms.inventory-waste.create');
+    Route::post('forms/inventory-waste', [InventoryConsumptionController::class, 'storeWaste'])->name('forms.inventory-waste.store');
+
+    Route::get('forms/batch-transfer', [\App\Http\Controllers\Poultry\BatchTransferController::class, 'create'])->name('forms.batch-transfer');
+    Route::post('forms/batch-transfer', [\App\Http\Controllers\Poultry\BatchTransferController::class, 'store'])->name('forms.batch-transfer.store');
 
     // API endpoints for dynamic data (optional)
     Route::get('api/batches/{batch}/chart-data', [AnalyticsController::class, 'chartData'])->name('api.chart-data');

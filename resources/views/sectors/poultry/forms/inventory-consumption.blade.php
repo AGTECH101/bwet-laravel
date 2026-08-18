@@ -1,12 +1,14 @@
 @extends('layouts.app')
 
-@section('title', 'Inventory Consumption - ' . config('app.name'))
+@php($isWaste = $isWaste ?? false)
+
+@section('title', $isWaste ? 'Inventory Waste - ' . config('app.name') : 'Inventory Consumption - ' . config('app.name'))
 
 @section('page_header')
 <div class="md:flex md:items-center md:justify-between mb-6">
     <div>
-        <h1 class="text-2xl font-bold text-gray-900">Record Inventory Consumption</h1>
-        <p class="text-sm text-gray-600">Record usage of inventory items</p>
+        <h1 class="text-2xl font-bold text-gray-900">{{ $isWaste ? 'Record Inventory Waste' : 'Record Inventory Consumption' }}</h1>
+        <p class="text-sm text-gray-600">{{ $isWaste ? 'Log spoilage, breakage, expired stock, or other losses' : 'Record usage of inventory items' }}</p>
     </div>
     <div class="mt-4 flex md:mt-0 md:ml-4">
         <a href="{{ route('poultry.inventory.index') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
@@ -19,7 +21,7 @@
 @section('content')
 <div class="max-w-2xl mx-auto">
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <form method="POST" action="{{ route('poultry.forms.inventory-consumption.store') }}" class="space-y-6">
+        <form method="POST" action="{{ $isWaste ? route('poultry.forms.inventory-waste.store') : route('poultry.forms.inventory-consumption.store') }}" class="space-y-6">
             @csrf
 
             <div>
@@ -54,15 +56,29 @@
                 @error('date') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
+            @if($isWaste)
+                <div>
+                    <label for="reason" class="block text-sm font-medium text-gray-700">Loss Reason <span class="text-red-500">*</span></label>
+                    <input type="text" name="reason" id="reason" value="{{ old('reason') }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. spoilage, breakage, expired stock" required>
+                    @error('reason') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label for="notes" class="block text-sm font-medium text-gray-700">Detailed Note <span class="text-red-500">*</span></label>
+                    <textarea name="notes" id="notes" rows="4" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" placeholder="Describe what happened, when it was discovered, and how the loss was verified." required>{{ old('notes') }}</textarea>
+                    @error('notes') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                </div>
+            @endif
+
             <div>
-                <label for="quantity_used" class="block text-sm font-medium text-gray-700">Quantity Used <span class="text-red-500">*</span></label>
+                <label for="quantity_used" class="block text-sm font-medium text-gray-700">{{ $isWaste ? 'Waste Quantity' : 'Quantity Used' }} <span class="text-red-500">*</span></label>
                 <input type="number" name="quantity_used" id="quantity_used" value="{{ old('quantity_used') }}" step="0.001" min="0.001" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" placeholder="0.000" required>
                 @error('quantity_used') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
             <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
                 <a href="{{ route('poultry.inventory.index') }}" class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Cancel</a>
-                <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Record Consumption</button>
+                <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">{{ $isWaste ? 'Record Waste' : 'Record Consumption' }}</button>
             </div>
         </form>
     </div>

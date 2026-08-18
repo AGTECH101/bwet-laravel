@@ -50,6 +50,7 @@ Route::middleware(['auth', 'verified', 'sector.selected'])->group(function () {
 
     // Observations (general)
     Route::resource('/observations', ObservationController::class)->except(['edit', 'update', 'destroy']);
+    Route::get('/observations/{observation}/review', [ObservationController::class, 'reviewForm'])->name('observations.review.form');
     Route::post('/observations/{observation}/review', [ObservationController::class, 'review'])->name('observations.review');
 
     // History Queries

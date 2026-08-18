@@ -18,6 +18,9 @@
         <a href="{{ route('poultry.batches.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
             <i class="fas fa-plus mr-2"></i> New Batch
         </a>
+        <a href="{{ route('poultry.inventory.waste') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+            <i class="fas fa-trash-alt mr-2"></i> Waste Log
+        </a>
     </div>
 </div>
 @endsection
@@ -121,11 +124,15 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Age</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Flock</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost/Kg</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sell/Kg</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sell/Carton</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FCR</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         @forelse($recentBatches ?? [] as $batch)
+                        @php($financial = $batch->getFinancialMetrics())
                         <tr class="hover:bg-gray-50">
                             <td class="px-4 py-3">
                                 <a href="{{ route('poultry.batches.show', $batch) }}" class="text-sm font-medium text-primary-600 hover:text-primary-700">
@@ -143,6 +150,15 @@
                                     <span class="text-sm text-gray-900">{{ $batch->remaining_flock }}/{{ $batch->starting_flock }}</span>
                                 </div>
                             </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                {{ format_currency($financial['cost_per_kg'] ?? 0) }}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                {{ format_currency($financial['selling_price_per_kg'] ?? 0) }}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                {{ format_currency($financial['selling_price_per_carton'] ?? 0) }}
+                            </td>
                             <td class="px-4 py-3">
                                 <span class="text-sm font-medium {{ $batch->current_cfcr < 1.8 ? 'text-green-600' : ($batch->current_cfcr < 2.0 ? 'text-yellow-600' : 'text-red-600') }}">
                                     {{ format_fcr($batch->current_cfcr) }}
@@ -151,7 +167,7 @@
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                            <td colspan="8" class="px-4 py-8 text-center text-gray-500">
                                 <i class="fas fa-inbox text-2xl mb-2"></i>
                                 <p>No batches found</p>
                             </td>

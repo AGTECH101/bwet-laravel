@@ -41,6 +41,7 @@ class PriceCalculatorController extends Controller
             'cost_of_production' => 'required|numeric|min:0',
             'current_average_weight' => 'required|numeric|min:0.001',
             'mod_weight' => 'required|numeric|min:0.001',
+            'target_margin' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $batch = null;
@@ -50,21 +51,27 @@ class PriceCalculatorController extends Controller
 
         $costOfProduction = (float) $request->cost_of_production;
         $currentAverageWeight = (float) $request->current_average_weight;
-        $modeWeight = (float) $request->mod_weight;
+        $referenceWeight = (float) $request->mod_weight;
+        $targetMargin = (float) ($request->target_margin ?? SystemVariable::getValue('profit_margin', 20));
 
-        if ($modeWeight <= 0) {
-            return response()->json(['error' => 'Mode weight must be greater than zero.'], 422);
+        if ($referenceWeight <= 0) {
+            return response()->json(['error' => 'Reference weight must be greater than zero.'], 422);
         }
 
-        $result = ($costOfProduction * $currentAverageWeight) / $modeWeight;
+        $dressedWeight = $currentAverageWeight * ((float) SystemVariable::getValue('dress_percentage', 75) / 100);
+        $costPerKg = $dressedWeight > 0 ? $costOfProduction / $dressedWeight : 0;
+        $minimumPricePerKg = $costPerKg;
+        $suggestedPricePerKg = $costPerKg * (1 + ($targetMargin / 100));
 
         return response()->json([
             'batch' => $batch?->batch_id ?? 'N/A',
             'cost_of_production' => round($costOfProduction, 2),
             'current_average_weight' => round($currentAverageWeight, 2),
-            'mod_weight' => round($modeWeight, 2),
-            'calculated_price' => round($result, 2),
-            'formula' => '($cost_of_production * $current_average_weight) / $mod_weight',
+            'reference_weight' => round($referenceWeight, 2),
+            'dressed_weight' => round($dressedWeight, 2),
+            'minimum_price_per_kg' => round($minimumPricePerKg, 2),
+            'calculated_price' => round($suggestedPricePerKg, 2),
+            'formula' => '((cost_of_production / dressed_weight) × (1 + target_margin))',
         ]);
     }
 }

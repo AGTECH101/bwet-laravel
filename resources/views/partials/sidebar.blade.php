@@ -41,6 +41,14 @@
         @endif
 
         @if(in_array($userRole, ['admin', 'manager', 'staff'], true))
+            <a href="{{ route('price-calculator.index') }}"
+               class="{{ request()->routeIs('price-calculator.*') ? 'bg-primary-50 text-primary-700 border-primary-500' : 'text-gray-700 hover:bg-gray-100' }} group flex items-center px-3 py-2 text-sm font-medium rounded-lg border-l-4 border-transparent">
+                <i class="fas fa-calculator mr-3 text-gray-400 group-hover:text-gray-500 {{ request()->routeIs('price-calculator.*') ? 'text-primary-500' : '' }}"></i>
+                Price Calculator
+            </a>
+        @endif
+
+        @if(in_array($userRole, ['admin', 'manager', 'staff'], true))
             <a href="{{ route('poultry.inventory.index') }}"
                class="{{ request()->routeIs('poultry.inventory.*') ? 'bg-primary-50 text-primary-700 border-primary-500' : 'text-gray-700 hover:bg-gray-100' }} group flex items-center px-3 py-2 text-sm font-medium rounded-lg border-l-4 border-transparent">
                 <i class="fas fa-boxes mr-3 text-gray-400 group-hover:text-gray-500 {{ request()->routeIs('poultry.inventory.*') ? 'text-primary-500' : '' }}"></i>
