@@ -26,8 +26,9 @@ class FeedRecordController extends Controller
             ->orderBy('start_date', 'desc')
             ->get();
 
-        $inventoryItems = InventoryItem::where('category', 'feed')->where('is_active', true)->get();
-        return view('sectors.poultry.feed-records.create', compact('batch', 'batches', 'inventoryItems'));
+        $feedItems = InventoryItem::where('category', 'feed')->where('is_active', true)->get();
+        $inventoryItems = $feedItems;
+        return view('sectors.poultry.feed-records.create', compact('batch', 'batches', 'inventoryItems', 'feedItems'));
     }
 
     public function store(FeedRecordRequest $request)
@@ -44,10 +45,16 @@ class FeedRecordController extends Controller
         $data['feed_per_bird'] = 0; // will be calculated in observer or on save
 
         $record = FeedRecord::create($data);
-        // The observer will create inventory consumption and update batch metrics
+
+        $item = InventoryItem::findOrFail($data['inventory_item_id']);
+        $item->quantity_in_stock = max(0, (float) $item->quantity_in_stock - (float) $data['feed_used']);
+        $item->quantity_used = (float) $item->quantity_used + (float) $data['feed_used'];
+        $item->save();
+
+        $record->batch?->updateCachedMetrics();
 
         return redirect()->route('poultry.batches.show', $record->batch)
-            ->with('success', 'Feed record saved. Inventory updated.');
+            ->with('success', 'Feed record saved. Inventory stock and batch cost were updated.');
     }
 
     public function edit(FeedRecord $feedRecord)

@@ -96,7 +96,7 @@ class InventoryConsumptionController extends Controller
             $batch?->updateCachedMetrics();
         }
 
-        return redirect()->route('poultry.inventory.show', $data['inventory_item_id'])
+        return redirect()->route('poultry.inventory.show', ['inventory' => $item->id])
             ->with('success', 'Inventory consumption recorded and batch cost updated.');
     }
 
@@ -171,7 +171,7 @@ class InventoryConsumptionController extends Controller
             $batch?->updateCachedMetrics();
         }
 
-        return redirect()->route('poultry.inventory.show', $itemId)
+        return redirect()->route('poultry.inventory.show', ['inventory' => $itemId])
             ->with('success', 'Consumption record deleted.');
     }
 }

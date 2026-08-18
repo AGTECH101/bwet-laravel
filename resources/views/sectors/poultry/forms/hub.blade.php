@@ -135,19 +135,6 @@
                 </div>
             </a>
 
-            <!-- Price Calculator -->
-            <a href="{{ route('price-calculator.index') }}" class="group relative bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
-                <div class="p-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 rounded-lg bg-cyan-100 flex items-center justify-center"><span class="text-2xl">🧮</span></div>
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-cyan-100 text-cyan-800">Pricing</span>
-                    </div>
-                    <h4 class="text-lg font-semibold text-gray-900 mb-2">Price Calculator</h4>
-                    <p class="text-sm text-gray-600 mb-4">Estimate selling prices to target the desired margin</p>
-                    <div class="flex items-center text-sm text-cyan-600"><span>Open calculator</span><i class="fas fa-arrow-right ml-2 transform group-hover:translate-x-1 transition-transform"></i></div>
-                </div>
-            </a>
-
             <!-- Batch Transfer -->
             <a href="{{ route('poultry.forms.batch-transfer') }}" class="group relative bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
                 <div class="p-6">
