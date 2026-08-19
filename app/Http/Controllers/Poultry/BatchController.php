@@ -28,7 +28,14 @@ class BatchController extends Controller
             ->where('sector_id', sector_id('poultry'))
             ->orderBy('created_at', 'desc');
 
-        // Apply status filter
+        // If show_closed is true, show only closed/completed; else show only active
+        if ($request->boolean('show_closed')) {
+            $query->whereIn('status', ['closed', 'completed']);
+        } else {
+            $query->where('status', 'active');
+        }
+
+        // Apply status filter (if provided, overrides the above)
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }

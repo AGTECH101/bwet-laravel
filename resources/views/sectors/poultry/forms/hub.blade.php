@@ -136,7 +136,7 @@
             </a>
 
             <!-- Batch Transfer -->
-            <a href="{{ route('poultry.forms.batch-transfer') }}" class="group relative bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+            {{-- <a href="{{ route('poultry.forms.batch-transfer') }}" class="group relative bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
                 <div class="p-6">
                     <div class="flex items-center justify-between mb-4">
                         <div class="w-12 h-12 rounded-lg bg-sky-100 flex items-center justify-center"><span class="text-2xl">🔄</span></div>
@@ -146,7 +146,7 @@
                     <p class="text-sm text-gray-600 mb-4">Move birds between active batches while preserving accurate flock counts</p>
                     <div class="flex items-center text-sm text-sky-600"><span>Transfer birds</span><i class="fas fa-arrow-right ml-2 transform group-hover:translate-x-1 transition-transform"></i></div>
                 </div>
-            </a>
+            </a> --}}
         </div>
         @else
         <div class="text-center py-12">

@@ -55,9 +55,9 @@
                     <p class="text-sm font-medium text-gray-600">Total Investment</p>
                     <p class="text-3xl font-bold text-gray-900 mt-2">{{ format_currency($overview['total_active_investment'] ?? 0) }}</p>
                 </div>
-                <div class="w-12 h-12 rounded-lg bg-green-500 flex items-center justify-center">
+                {{-- <div class="w-12 h-12 rounded-lg bg-green-500 flex items-center justify-center">
                     <i class="fas fa-money-bill-wave text-white text-xl"></i>
-                </div>
+                </div> --}}
             </div>
             <div class="mt-4">
                 <div class="text-sm text-gray-500">
@@ -72,9 +72,9 @@
                     <p class="text-sm font-medium text-gray-600">Inventory Value</p>
                     <p class="text-3xl font-bold text-gray-900 mt-2">{{ format_currency($financial['inventory_value'] ?? 0) }}</p>
                 </div>
-                <div class="w-12 h-12 rounded-lg bg-yellow-500 flex items-center justify-center">
+                {{-- <div class="w-12 h-12 rounded-lg bg-yellow-500 flex items-center justify-center">
                     <i class="fas fa-boxes text-white text-xl"></i>
-                </div>
+                </div> --}}
             </div>
             <div class="mt-4">
                 @if(($alerts['low_stock_items'] ?? 0) > 0)
@@ -145,7 +145,7 @@
                             <td class="px-4 py-3">
                                 <div class="flex items-center">
                                     <div class="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                                        <div class="bg-blue-600 h-2 rounded-full" style="width: {{ ($batch->remaining_flock / max($batch->starting_flock, 1)) * 100 }}%"></div>
+                                        <div class="bg-green-600 h-2 rounded-full" style="width: {{ ($batch->remaining_flock / max($batch->starting_flock, 1)) * 100 }}%"></div>
                                     </div>
                                     <span class="text-sm text-gray-900">{{ $batch->remaining_flock }}/{{ $batch->starting_flock }}</span>
                                 </div>

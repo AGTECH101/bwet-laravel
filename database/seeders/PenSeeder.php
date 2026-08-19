@@ -19,7 +19,7 @@ class PenSeeder extends Seeder
         ];
 
         foreach ($pens as $pen) {
-            Pen::create($pen);
+            Pen::firstOrCreate(['pen_code' => $pen['pen_code']], $pen);
         }
     }
 }

@@ -25,10 +25,14 @@ class DashboardService
 
     public static function getAdminDashboard()
     {
-        $allBatches = Batch::query()->get();
+        // Only active batches for recent display
+        $allBatches = Batch::where('status', 'active')->get();
         self::refreshBatchMetrics($allBatches);
 
-        $recentBatches = Batch::query()->latest('created_at')->limit(5)->get();
+        $recentBatches = Batch::where('status', 'active')
+            ->latest('created_at')
+            ->limit(5)
+            ->get();
         self::refreshBatchMetrics($recentBatches);
 
         $lowStockItems = InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->get();
@@ -43,7 +47,7 @@ class DashboardService
                 'total_active_investment' => self::getTotalActiveInvestment(),
             ],
             'financial' => [
-                'total_expenses' => Batch::sum('total_expenses') + Batch::sum('initial_chicken_cost'),
+                'total_expenses' => Batch::where('status', 'active')->sum('total_expenses') + Batch::where('status', 'active')->sum('initial_chicken_cost'),
                 'inventory_value' => InventoryItem::sum(DB::raw('quantity_in_stock * cost_per_unit')),
             ],
             'alerts' => [
@@ -59,6 +63,7 @@ class DashboardService
 
     public static function getManagerDashboard(User $user)
     {
+        // Only active batches
         $batches = Batch::where('status', 'active')->with('createdBy')->get();
         self::refreshBatchMetrics($batches);
         $lowStockItems = InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->get();
@@ -92,6 +97,7 @@ class DashboardService
 
     public static function getStaffDashboard(User $user)
     {
+        // Only active batches created by this staff
         $activeBatches = Batch::where('created_by_id', $user->id)->where('status', 'active')->get();
         $todaySchedules = \App\Models\Poultry\WeighingSchedule::with('batch')->whereDate('scheduled_date', today())->where('is_completed', false)->get();
         $flockRecords = \App\Models\Poultry\FlockRecord::where('recorded_by_id', $user->id)->latest()->limit(5)->get();
@@ -110,7 +116,9 @@ class DashboardService
                 'last_feed_date' => \App\Models\Poultry\FeedRecord::where('recorded_by_id', $user->id)->latest('date')->value('date'),
             ],
             'active_batches' => $activeBatches,
-            'recent_flock' => $flockRecords,
+            'recentFlock' => $flockRecords,
+            'recentWeight' => $weightRecords,
+            'recentFeed' => $feedRecords,
             'todayTasksCount' => $todaySchedules->count(),
             'todaySchedules' => $todaySchedules,
             'lowStockCount' => InventoryItem::whereColumn('quantity_in_stock', '<=', 'minimum_quantity')->count(),

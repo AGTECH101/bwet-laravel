@@ -55,7 +55,10 @@ class UserSeeder extends Seeder
         ];
 
         foreach ($users as $userData) {
-            $user = User::create($userData);
+            $user = User::firstOrCreate(
+                ['email' => $userData['email']],
+                $userData
+            );
             $user->assignRole($userData['role']);
         }
     }

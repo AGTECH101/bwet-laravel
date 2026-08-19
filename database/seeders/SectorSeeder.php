@@ -9,12 +9,14 @@ class SectorSeeder extends Seeder
 {
     public function run(): void
     {
-        Sector::create([
-            'name' => 'Poultry',
-            'slug' => 'poultry',
-            'description' => 'Broiler and layer production',
-            'status' => 'active',
-            'is_live' => true,
-        ]);
+        Sector::firstOrCreate(
+            ['slug' => 'poultry'],
+            [
+                'name' => 'Poultry',
+                'description' => 'Broiler and layer production',
+                'status' => 'active',
+                'is_live' => true,
+            ]
+        );
     }
 }

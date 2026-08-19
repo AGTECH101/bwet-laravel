@@ -15,13 +15,27 @@
             </button>
             <div x-show="open" @click.away="open = false" class="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10" style="display: none;">
                 <div class="py-1">
-                    <a href="{{ route('poultry.batches.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">All</a>
-                    <a href="{{ route('poultry.batches.index', ['status' => 'active']) }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Active</a>
-                    <a href="{{ route('poultry.batches.index', ['status' => 'closed']) }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Closed</a>
-                    <a href="{{ route('poultry.batches.index', ['status' => 'completed']) }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Completed</a>
+                    <a href="{{ route('poultry.batches.index', ['show_closed' => request('show_closed', 0)]) }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">All</a>
+                    <a href="{{ route('poultry.batches.index', ['status' => 'active', 'show_closed' => request('show_closed', 0)]) }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Active</a>
+                    <a href="{{ route('poultry.batches.index', ['status' => 'closed', 'show_closed' => request('show_closed', 0)]) }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Closed</a>
+                    <a href="{{ route('poultry.batches.index', ['status' => 'completed', 'show_closed' => request('show_closed', 0)]) }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Completed</a>
                 </div>
             </div>
         </div>
+
+        <!-- Toggle Show Closed -->
+        @if(request()->boolean('show_closed'))
+            <a href="{{ route('poultry.batches.index', array_merge(request()->except('show_closed'), ['show_closed' => 0])) }}" 
+               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                <i class="fas fa-eye-slash mr-2"></i> Hide Closed
+            </a>
+        @else
+            <a href="{{ route('poultry.batches.index', array_merge(request()->except('show_closed'), ['show_closed' => 1])) }}" 
+               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                <i class="fas fa-eye mr-2"></i> Show Closed
+            </a>
+        @endif
+
         <a href="{{ route('poultry.batches.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
             <i class="fas fa-plus mr-2"></i> New Batch
         </a>
@@ -59,10 +73,11 @@
             <div class="flex-1 relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div>
                 <input type="text" name="search" value="{{ request('search') }}" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md sm:text-sm focus:ring-primary-500 focus:border-primary-500" placeholder="Search batches by ID or name...">
+                <input type="hidden" name="show_closed" value="{{ request('show_closed', 0) }}">
             </div>
             <button type="submit" class="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700">Search</button>
             @if(request()->has('search') || request()->has('status'))
-            <a href="{{ route('poultry.batches.index') }}" class="px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Clear</a>
+            <a href="{{ route('poultry.batches.index', ['show_closed' => request('show_closed', 0)]) }}" class="px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Clear</a>
             @endif
         </form>
     </div>

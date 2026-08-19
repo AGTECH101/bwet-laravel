@@ -10,14 +10,18 @@ use Illuminate\Support\Facades\Gate;
 
 class InventoryController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index(Request $request)
     {
         Gate::authorize('viewAny', InventoryItem::class);
 
         $query = InventoryItem::query();
+
+        // If show_killed is true, show only killed items; else show only active items
+        if ($request->boolean('show_killed')) {
+            $query->where('is_active', false);
+        } else {
+            $query->where('is_active', true);
+        }
 
         if ($request->filled('category')) {
             $query->where('category', $request->category);
@@ -35,7 +39,6 @@ class InventoryController extends Controller
             if ($request->status === 'low') {
                 $query->whereColumn('quantity_in_stock', '<=', 'minimum_quantity');
             }
-
             if ($request->status === 'out') {
                 $query->where('quantity_in_stock', '<=', 0);
             }
@@ -47,19 +50,12 @@ class InventoryController extends Controller
         return view('sectors.poultry.inventory.index', compact('items', 'totalValue'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
     public function create()
     {
         Gate::authorize('create', InventoryItem::class);
-
         return view('sectors.poultry.forms.inventory-item');
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(InventoryItemRequest $request)
     {
         Gate::authorize('create', InventoryItem::class);
@@ -74,79 +70,80 @@ class InventoryController extends Controller
             ->with('success', 'Inventory item created successfully.');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(InventoryItem $item)
+    // FIX: parameter name matches route {inventory}
+    public function show(InventoryItem $inventory)
     {
-        Gate::authorize('view', $item);
+        Gate::authorize('view', $inventory);
 
-        $consumptionHistory = $item->consumptions()
+        $consumptionHistory = $inventory->consumptions()
             ->with('batch', 'recordedBy')
             ->latest('date')
             ->limit(20)
             ->get();
 
-        return view('sectors.poultry.inventory.show', compact('item', 'consumptionHistory'));
+        return view('sectors.poultry.inventory.show', compact('inventory', 'consumptionHistory'));
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(InventoryItem $item)
+    // FIX: parameter name matches route {inventory}
+    public function edit(InventoryItem $inventory)
     {
-        Gate::authorize('update', $item);
+        Gate::authorize('update', $inventory);
 
-        return view('sectors.poultry.forms.inventory-item', compact('item'));
+        if (!$inventory->is_active) {
+            return redirect()->route('poultry.inventory.show', $inventory)
+                ->with('error', 'Cannot edit a killed (deactivated) inventory item.');
+        }
+
+        return view('sectors.poultry.forms.inventory-item', compact('inventory'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(InventoryItemRequest $request, InventoryItem $item)
+    // FIX: parameter name matches route {inventory}
+    public function update(InventoryItemRequest $request, InventoryItem $inventory)
     {
-        Gate::authorize('update', $item);
+        Gate::authorize('update', $inventory);
 
-        $item->update($request->validated());
+        if (!$inventory->is_active) {
+            return redirect()->route('poultry.inventory.show', $inventory)
+                ->with('error', 'Cannot update a killed (deactivated) inventory item.');
+        }
 
-        return redirect()->route('poultry.inventory.show', $item)
+        $inventory->update($request->validated());
+
+        return redirect()->route('poultry.inventory.show', $inventory)
             ->with('success', 'Inventory item updated successfully.');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(InventoryItem $item)
+    // FIX: parameter name matches route {inventory}
+    public function destroy(InventoryItem $inventory)
     {
-        Gate::authorize('delete', $item);
-
-        $item->delete();
-
+        Gate::authorize('delete', $inventory);
+        $inventory->delete();
         return redirect()->route('poultry.inventory.index')
             ->with('success', 'Inventory item deleted.');
     }
 
-    /**
-     * Mark an inventory item as killed.
-     */
+    // This route uses {item} (kill and recalculate use {item})
     public function kill(Request $request, InventoryItem $item)
     {
         Gate::authorize('update', $item);
 
-        $item->status = 'killed';
+        if (!$item->is_active) {
+            return redirect()->route('poultry.inventory.show', $item)
+                ->with('error', 'This item is already killed.');
+        }
+
         $item->is_active = false;
+        $item->status = 'killed';
         $item->killed_by_id = auth()->id();
         $item->killed_at = now();
         $item->killed_reason = $request->input('reason');
         $item->save();
 
-        return redirect()->route('poultry.inventory.show', $item)
-            ->with('success', 'Inventory item marked as killed and deactivated.');
+        return redirect()->route('poultry.inventory.index')
+            ->with('success', 'Inventory item killed (deactivated) successfully.');
     }
 
-    /**
-     * Recalculate historical costs for the item.
-     */
+    // This route uses {item}
     public function recalculateCosts(InventoryItem $item)
     {
         Gate::authorize('update', $item);

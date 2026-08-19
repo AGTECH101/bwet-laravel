@@ -4,7 +4,7 @@
     $userRole = auth()->user()->role ?? null;
 @endphp
 
-<div class="flex flex-col h-full">
+<div class="flex flex-col h-full md:h-[100vh] md:fixed">
     <!-- Sidebar header -->
     <div class="flex items-center h-16 flex-shrink-0 px-4 border-b border-gray-200">
         <a href="{{ route('dashboard') }}" class="flex items-center space-x-2">

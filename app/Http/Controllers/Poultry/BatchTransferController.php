@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Poultry\Batch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
 
 class BatchTransferController extends Controller
 {
@@ -40,44 +41,61 @@ class BatchTransferController extends Controller
             ]);
         }
 
+        // Get current average weights
         $sourceAverageWeight = (float) $source->getCurrentAverageWeight();
         $destinationAverageWeight = (float) $destination->getCurrentAverageWeight();
 
-        $sourceCostPerBird = (float) $source->getCostPerBird();
-        $destinationCostPerBird = (float) $destination->getCostPerBird();
+        // Calculate cost per bird for the source using only initial chicken cost
+        // (other costs like feed and expenses stay with the batch)
+        $sourceCostPerBird = $source->remaining_flock > 0
+            ? (float) $source->initial_chicken_cost / $source->remaining_flock
+            : 0;
 
         $sourceTransferCost = $sourceCostPerBird * $transferCount;
-        $destinationTransferCost = $destinationCostPerBird * $transferCount;
 
-        $sourceRemainingBefore = (int) $source->remaining_flock;
-        $destinationRemainingBefore = (int) $destination->remaining_flock;
+        // --- Update source batch ---
+        $source->remaining_flock = max(0, $source->remaining_flock - $transferCount);
+        $source->initial_chicken_cost = max(0, $source->initial_chicken_cost - $sourceTransferCost);
+        // DO NOT modify cost_allocated_so_far - it tracks slaughter allocations
 
-        $source->remaining_flock = max(0, $sourceRemainingBefore - $transferCount);
-        $destination->remaining_flock = $destinationRemainingBefore + $transferCount;
+        // --- Update destination batch ---
+        $destination->remaining_flock += $transferCount;
+        $destination->initial_chicken_cost += $sourceTransferCost;
+        // DO NOT modify cost_allocated_so_far
 
-        $source->initial_chicken_cost = max(0, (float) $source->initial_chicken_cost - $sourceTransferCost);
-        $destination->initial_chicken_cost = (float) $destination->initial_chicken_cost + $sourceTransferCost;
+        // --- Update average weight (if column exists) ---
+        if (Schema::hasColumn('poultry_batches', 'current_average_weight')) {
+            // Source: if birds remain, average weight stays the same (we assume transferred birds are representative)
+            $source->current_average_weight = $source->remaining_flock > 0 ? $sourceAverageWeight : 0;
 
-        $source->cost_allocated_so_far = max(0, (float) $source->cost_allocated_so_far - $sourceTransferCost);
-        $destination->cost_allocated_so_far = (float) $destination->cost_allocated_so_far + $destinationTransferCost;
-
-        $sourceWeightedWeight = $sourceAverageWeight * max(1, $sourceRemainingBefore);
-        $destinationWeightedWeight = $destinationAverageWeight * max(1, $destinationRemainingBefore);
-        $totalBirdsAfterTransfer = $source->remaining_flock + $destination->remaining_flock;
-
-        if ($totalBirdsAfterTransfer > 0) {
-            $combinedAverageWeight = ($sourceWeightedWeight + $destinationWeightedWeight + ($sourceAverageWeight * $transferCount)) / $totalBirdsAfterTransfer;
-            $source->current_average_weight = $source->remaining_flock > 0 ? max(0, ($sourceWeightedWeight - ($sourceAverageWeight * $transferCount)) / $source->remaining_flock) : 0;
-            $destination->current_average_weight = $combinedAverageWeight;
+            // Destination: compute new average weight including transferred birds
+            if ($destination->remaining_flock > 0) {
+                $totalWeightBefore = ($destination->remaining_flock - $transferCount) * $destinationAverageWeight;
+                $totalWeightTransferred = $transferCount * $sourceAverageWeight;
+                $destination->current_average_weight = ($totalWeightBefore + $totalWeightTransferred) / $destination->remaining_flock;
+            } else {
+                $destination->current_average_weight = 0;
+            }
         }
 
+        // Save both batches
         $source->save();
         $destination->save();
 
+        // Recalculate all cached metrics for both batches
         $source->updateCachedMetrics();
         $destination->updateCachedMetrics();
 
+        // Create a notification (optional)
+        \App\Models\Notification::createGlobal(
+            'batch_transfer',
+            "Batch Transfer Completed",
+            "Transferred {$transferCount} birds from {$source->batch_id} to {$destination->batch_id}",
+            auth()->user(),
+            $destination
+        );
+
         return redirect()->route('poultry.forms.hub')
-            ->with('success', 'Batch transfer completed and the receiving batch was updated with transferred birds, weight, and cost basis.');
+            ->with('success', "Successfully transferred {$transferCount} birds from {$source->batch_id} to {$destination->batch_id}.");
     }
 }

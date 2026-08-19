@@ -39,8 +39,8 @@ Route::prefix('poultry')->name('poultry.')->middleware(['auth', 'verified'])->gr
     // Inventory Items
     Route::get('inventory/waste', [InventoryConsumptionController::class, 'wasteIndex'])->name('inventory.waste');
     Route::resource('inventory', InventoryController::class);
-    Route::post('inventory/{item}/kill', [InventoryController::class, 'kill'])->name('inventory.kill');
-    Route::post('inventory/{item}/recalculate-costs', [InventoryController::class, 'recalculateCosts'])->name('inventory.recalculate');
+    Route::post('inventory/{inventory}/kill', [InventoryController::class, 'kill'])->name('inventory.kill');
+    Route::post('inventory/{inventory}/recalculate-costs', [InventoryController::class, 'recalculateCosts'])->name('inventory.recalculate');
 
     // Inventory Consumption
     Route::resource('inventory-consumptions', InventoryConsumptionController::class)->except(['index', 'show']);

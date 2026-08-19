@@ -31,6 +31,19 @@
         <a href="{{ route('poultry.inventory.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
             <i class="fas fa-plus mr-2"></i> New Item
         </a>
+
+        <!-- Toggle Killed Items Filter -->
+        @if(request()->boolean('show_killed'))
+            <a href="{{ route('poultry.inventory.index', array_merge(request()->except('show_killed'), ['show_killed' => 0])) }}"
+               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                <i class="fas fa-eye-slash mr-2"></i> Hide Killed
+            </a>
+        @else
+            <a href="{{ route('poultry.inventory.index', array_merge(request()->except('show_killed'), ['show_killed' => 1])) }}"
+               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                <i class="fas fa-eye mr-2"></i> Show Killed
+            </a>
+        @endif
     </div>
 </div>
 @endsection
@@ -49,7 +62,6 @@
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
                 <div><p class="text-sm font-medium text-gray-600">Total Value</p><p class="text-3xl font-bold text-gray-900">{{ format_currency($totalValue ?? 0) }}</p></div>
-                <div class="w-12 h-12 rounded-lg bg-green-500 flex items-center justify-center"><i class="fas fa-money-bill-wave text-white text-xl"></i></div>
             </div>
         </div>
         @endif
@@ -83,9 +95,11 @@
                     <option value="out" {{ request('status') == 'out' ? 'selected' : '' }}>Out of Stock</option>
                 </select>
             </div>
+            <!-- Preserve show_killed parameter -->
+            <input type="hidden" name="show_killed" value="{{ request('show_killed', 0) }}">
             <button type="submit" class="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700">Filter</button>
             @if(request()->hasAny(['search','category','status']))
-            <a href="{{ route('poultry.inventory.index') }}" class="px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Clear</a>
+            <a href="{{ route('poultry.inventory.index', ['show_killed' => request('show_killed', 0)]) }}" class="px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Clear</a>
             @endif
         </form>
     </div>
@@ -128,22 +142,26 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">{{ format_currency($item->quantity_in_stock * $item->cost_per_unit) }}</td>
                         @endif
                         <td class="px-6 py-4 whitespace-nowrap">
-                            @if($item->isOutOfStock())
-                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">Out of Stock</span>
+                            @if(!$item->is_active)
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">Killed</span>
+                            @elseif($item->isOutOfStock())
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">Out of Stock</span>
                             @elseif($item->isLowStock())
-                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Low Stock</span>
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Low Stock</span>
                             @else
-                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">In Stock</span>
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">In Stock</span>
                             @endif
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <a href="{{ route('poultry.inventory.show', $item) }}" class="text-primary-600 hover:text-primary-900 mr-2"><i class="fas fa-eye"></i></a>
-                            <a href="{{ route('poultry.forms.inventory-consumption.create', ['inventory_item' => $item->id]) }}" class="text-green-600 hover:text-green-900 mr-2"><i class="fas fa-minus-circle"></i></a>
-                            @if($item->status !== 'killed')
-                            <form method="POST" action="{{ route('poultry.inventory.kill', $item) }}" class="inline" onsubmit="return confirm('Kill this item?')">
-                                @csrf
-                                <button type="submit" class="text-red-600 hover:text-red-900 bg-transparent border-0 p-0 cursor-pointer"><i class="fas fa-skull-crossbones"></i></button>
-                            </form>
+                            @if($item->is_active)
+                                <a href="{{ route('poultry.forms.inventory-consumption.create', ['inventory_item' => $item->id]) }}" class="text-green-600 hover:text-green-900 mr-2"><i class="fas fa-minus-circle"></i></a>
+                                <form method="POST" action="{{ route('poultry.inventory.kill', $item) }}" class="inline" onsubmit="return confirm('Kill this item?')">
+                                    @csrf
+                                    <button type="submit" class="text-red-600 hover:text-red-900 bg-transparent border-0 p-0 cursor-pointer"><i class="fas fa-skull-crossbones"></i></button>
+                                </form>
+                            @else
+                                <span class="text-gray-400" title="Item is killed"><i class="fas fa-ban"></i></span>
                             @endif
                         </td>
                     </tr>
