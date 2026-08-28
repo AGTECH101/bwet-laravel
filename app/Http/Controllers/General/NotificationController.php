@@ -3,41 +3,44 @@
 namespace App\Http\Controllers\General;
 
 use App\Http\Controllers\Controller;
-use App\Models\NotificationReadStatus;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class NotificationController extends Controller
 {
     public function index()
     {
-        $readStatuses = NotificationService::getUserNotifications(auth()->user());
-        return view('general.notifications.index', compact('readStatuses'));
+        $user = Auth::user();
+        $notifications = NotificationService::getUserNotifications($user, 50);
+
+        // Mark all as read when viewing the page
+        NotificationService::markAllAsRead($user);
+
+        return view('general.notifications.index', compact('notifications'));
     }
 
-    public function markRead(Request $request, int $notificationId)
+    public function markRead(Request $request, $notificationId)
     {
-        $success = NotificationService::markAsRead(auth()->user(), $notificationId);
+        $user = Auth::user();
+        NotificationService::markAsRead($user, $notificationId);
 
-        return redirect()->route('notifications.index')->with(
-            'success',
-            $success ? 'Notification marked as read.' : 'Notification was already read.'
-        );
+        if ($request->ajax()) {
+            return response()->json(['success' => true]);
+        }
+
+        return redirect()->back()->with('success', 'Notification marked as read.');
     }
 
-    public function clearAll()
+    public function clearAll(Request $request)
     {
-        $user = auth()->user();
-        $updated = NotificationReadStatus::where('user_id', $user->id)
-            ->where('is_read', false)
-            ->update([
-                'is_read' => true,
-                'read_at' => now(),
-            ]);
+        $user = Auth::user();
+        NotificationService::markAllAsRead($user);
 
-        return redirect()->route('notifications.index')->with(
-            'success',
-            $updated > 0 ? 'All notifications marked as read.' : 'There were no unread notifications.'
-        );
+        if ($request->ajax()) {
+            return response()->json(['success' => true]);
+        }
+
+        return redirect()->back()->with('success', 'All notifications marked as read.');
     }
 }
