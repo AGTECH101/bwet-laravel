@@ -12,11 +12,12 @@ class FlockRecord extends Model
 
     protected $fillable = [
         'poultry_batch_id', 'date', 'mortality', 'culls', 'slaughter',
-        'notes', 'recorded_by_id'
+        'notes', 'recorded_by_id', 'allocated_cost'  // <-- ADD THIS
     ];
 
     protected $casts = [
         'date' => 'date',
+        'allocated_cost' => 'decimal:2',  // <-- ADD THIS
     ];
 
     public function batch()

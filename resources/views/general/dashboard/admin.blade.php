@@ -6,15 +6,16 @@
 <div class="md:flex md:items-center md:justify-between mb-6">
     <div>
         <h1 class="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p class="text-sm text-gray-600">Welcome back, {{ auth()->user()->name }}. Last refreshed: {{ now()->format('H:i:s') }}</p>
+        {{-- <p class="text-sm text-gray-600">Welcome back, {{ auth()->user()->name }}. Last refreshed: {{ now()->format('H:i:s') }}</p> --}}
+        <p class="text-sm text-gray-600">Welcome back, {{ auth()->user()->name }}</p>
     </div>
     <div class="mt-4 flex md:mt-0 md:ml-4 space-x-2">
-        <form method="POST" action="{{ route('quick-refresh') }}" class="inline">
+        {{-- <form method="POST" action="{{ route('quick-refresh') }}" class="inline">
             @csrf
             <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
                 <i class="fas fa-sync-alt mr-2"></i> Refresh
             </button>
-        </form>
+        </form> --}}
         <a href="{{ route('poultry.batches.create') }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
             <i class="fas fa-plus mr-2"></i> New Batch
         </a>
@@ -141,7 +142,7 @@
                                 <p class="text-xs text-gray-500">{{ Str::limit($batch->name, 20) }}</p>
                             </td>
                             <td class="px-4 py-3">{!! batch_status_badge($batch->status) !!}</td>
-                            <td class="px-4 py-3 text-sm text-gray-900">{{ $batch->current_age_days }} days</td>
+                            <td class="px-4 py-3 text-sm text-gray-900">{{ $batch->age_days }} days</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center">
                                     <div class="w-16 bg-gray-200 rounded-full h-2 mr-2">

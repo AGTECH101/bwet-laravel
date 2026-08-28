@@ -105,7 +105,7 @@
                             </a>
                             <div class="text-xs text-gray-500">{{ Str::limit($batch->name, 25) }}</div>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $batch->current_age_days }} days</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $batch->age_days }} days</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center">
                                 <div class="w-20 bg-gray-200 rounded-full h-2 mr-2">

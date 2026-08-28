@@ -154,7 +154,7 @@ class BatchCalculationService
             // Age
             $batch->current_age_days = max(0, Carbon::today()->diffInDays($batch->start_date));
 
-            // Flock totals
+            // Flock totals (DO NOT recalculate remaining_flock – it's managed manually via transfers/flock records)
             $totals = $batch->flockRecords()
                 ->selectRaw('SUM(mortality) as total_mort, SUM(culls) as total_culls, SUM(slaughter) as total_slaughter')
                 ->first();
@@ -162,8 +162,6 @@ class BatchCalculationService
             $batch->total_mortality = $totals->total_mort ?? 0;
             $batch->total_culls = $totals->total_culls ?? 0;
             $batch->total_slaughter = $totals->total_slaughter ?? 0;
-
-            $batch->remaining_flock = max(0, $batch->starting_flock - ($batch->total_mortality + $batch->total_culls + $batch->total_slaughter));
 
             // Feed totals
             $feedTotal = $batch->feedRecords()->sum('feed_used') ?? 0;

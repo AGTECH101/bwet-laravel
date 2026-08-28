@@ -117,11 +117,16 @@ class BatchController extends Controller
             if ($batch->phase === 'batch') {
                 $pen = Pen::available()->first();
                 if ($pen) {
-                    $pen->occupy($batch);
-                    $batch->pen_id = $pen->id;
-                    $batch->save();
+                    // Check capacity
+                    if ($pen->capacity < $batch->starting_flock) {
+                        session()->flash('warning', 'Pen capacity (' . $pen->capacity . ') is less than starting flock (' . $batch->starting_flock . '). Please assign a larger pen manually.');
+                        // Still proceed without assigning the pen
+                    } else {
+                        $pen->occupy($batch);
+                        $batch->pen_id = $pen->id;
+                        $batch->save();
+                    }
                 } else {
-                    // Warn but allow creation
                     session()->flash('warning', 'No available pen for batch phase. Batch created without pen assignment.');
                 }
             }
@@ -202,8 +207,13 @@ class BatchController extends Controller
         if ($batch->phase === 'batch' && is_null($batch->pen_id)) {
             $pen = Pen::available()->first();
             if ($pen) {
-                $pen->occupy($batch);
-                $batch->pen_id = $pen->id;
+                // Check capacity
+                if ($pen->capacity >= $batch->starting_flock) {
+                    $pen->occupy($batch);
+                    $batch->pen_id = $pen->id;
+                } else {
+                    session()->flash('warning', 'Pen capacity (' . $pen->capacity . ') is less than starting flock (' . $batch->starting_flock . ').');
+                }
             } else {
                 session()->flash('warning', 'No available pen for batch phase. Batch remains without pen assignment.');
             }

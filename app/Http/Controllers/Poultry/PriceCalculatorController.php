@@ -14,9 +14,11 @@ class PriceCalculatorController extends Controller
     {
         Gate::authorize('viewAny', Batch::class);
 
-        $selectedBatch = null;
-        $batches = Batch::query()->orderBy('start_date', 'desc')->get();
+        $batches = Batch::where('status', 'active')
+            ->orderBy('created_at', 'desc')
+            ->get();
 
+        $selectedBatch = null;
         if ($request->filled('batch')) {
             $selectedBatch = Batch::where('batch_id', $request->batch)->first();
         }
@@ -37,41 +39,47 @@ class PriceCalculatorController extends Controller
         Gate::authorize('viewAny', Batch::class);
 
         $request->validate([
-            'selected_batch' => 'nullable|string',
-            'cost_of_production' => 'required|numeric|min:0',
-            'current_average_weight' => 'required|numeric|min:0.001',
-            'mod_weight' => 'required|numeric|min:0.001',
-            'target_margin' => 'nullable|numeric|min:0|max:100',
+            'batch_id' => 'nullable|exists:poultry_batches,id',
+            'customer_bird_weight' => 'required|numeric|min:0.001',
+            'mode_weight' => 'required|numeric|min:0.001',
+            'profit_margin' => 'nullable|numeric|min:0|max:100',
         ]);
 
-        $batch = null;
-        if ($request->filled('selected_batch')) {
-            $batch = Batch::where('batch_id', $request->selected_batch)->first();
+        $batch = Batch::find($request->batch_id);
+
+        if (!$batch) {
+            return response()->json(['error' => 'Please select a valid batch.'], 422);
         }
 
-        $costOfProduction = (float) $request->cost_of_production;
-        $currentAverageWeight = (float) $request->current_average_weight;
-        $referenceWeight = (float) $request->mod_weight;
-        $targetMargin = (float) ($request->target_margin ?? SystemVariable::getValue('profit_margin', 20));
+        $customerWeight = (float) $request->customer_bird_weight;
+        $modeWeight = (float) $request->mode_weight;
+        $profitMargin = (float) ($request->profit_margin ?? SystemVariable::getValue('profit_margin', 20));
 
-        if ($referenceWeight <= 0) {
-            return response()->json(['error' => 'Reference weight must be greater than zero.'], 422);
-        }
+        // Use the checkpoint state
+        $avgCost = $batch->current_average_cost;
 
-        $dressedWeight = $currentAverageWeight * ((float) SystemVariable::getValue('dress_percentage', 75) / 100);
-        $costPerKg = $dressedWeight > 0 ? $costOfProduction / $dressedWeight : 0;
-        $minimumPricePerKg = $costPerKg;
-        $suggestedPricePerKg = $costPerKg * (1 + ($targetMargin / 100));
+        // Calculate the selling price per bird
+        $costScaled = ($customerWeight / $modeWeight) * $avgCost;
+        $sellingPricePerBird = $costScaled * (1 + $profitMargin / 100);
+
+        // Dressed weight (if needed)
+        $dressPercentage = SystemVariable::getValue('dress_percentage', 75);
+        $dressedWeight = $customerWeight * ($dressPercentage / 100);
+        $sellingPricePerKg = $dressedWeight > 0 ? $sellingPricePerBird / $dressedWeight : 0;
+        $sellingPricePerCarton = $sellingPricePerKg * 10;
 
         return response()->json([
-            'batch' => $batch?->batch_id ?? 'N/A',
-            'cost_of_production' => round($costOfProduction, 2),
-            'current_average_weight' => round($currentAverageWeight, 2),
-            'reference_weight' => round($referenceWeight, 2),
-            'dressed_weight' => round($dressedWeight, 2),
-            'minimum_price_per_kg' => round($minimumPricePerKg, 2),
-            'calculated_price' => round($suggestedPricePerKg, 2),
-            'formula' => '((cost_of_production / dressed_weight) × (1 + target_margin))',
+            'batch_id' => $batch->id,
+            'batch_name' => $batch->batch_id . ' - ' . $batch->name,
+            'customer_bird_weight' => round($customerWeight, 3),
+            'mode_weight' => round($modeWeight, 3),
+            'current_avg_cost' => round($avgCost, 2),
+            'cost_scaled' => round($costScaled, 2),
+            'profit_margin' => round($profitMargin, 1),
+            'selling_price_per_bird' => round($sellingPricePerBird, 2),
+            'selling_price_per_kg' => round($sellingPricePerKg, 2),
+            'selling_price_per_carton' => round($sellingPricePerCarton, 2),
+            'dress_percentage' => $dressPercentage,
         ]);
     }
 }

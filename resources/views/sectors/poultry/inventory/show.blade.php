@@ -20,9 +20,11 @@
                 <i class="fas fa-minus-circle mr-2"></i> Use Item
             </a>
             @can('update', $inventory)
-                <a href="{{ route('poultry.inventory.edit', $inventory) }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
-                    <i class="fas fa-edit mr-2"></i> Edit
-                </a>
+                @if($inventory->is_active)
+                    <button type="button" onclick="openEditModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">
+                        <i class="fas fa-edit mr-2"></i> Edit
+                    </button>
+                @endif
             @endcan
         @endif
     </div>
@@ -177,4 +179,66 @@
         </div>
     </div>
 </div>
+
+
+<!-- Edit Inventory Modal -->
+<div id="editInventoryModal" class="fixed inset-0 z-50 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="closeEditModal()"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+            <form method="POST" action="{{ route('poultry.inventory.update', $inventory) }}" class="p-6">
+                @csrf
+                @method('PUT')
+
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Edit Inventory Item</h3>
+                    <button type="button" onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label for="edit_quantity_in_stock" class="block text-sm font-medium text-gray-700">Quantity in Stock</label>
+                        <input type="number" name="quantity_in_stock" id="edit_quantity_in_stock" value="{{ $inventory->quantity_in_stock }}" step="0.001" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                    </div>
+
+                    <div>
+                        <label for="edit_cost_per_unit" class="block text-sm font-medium text-gray-700">Cost per Unit (₦)</label>
+                        <input type="number" name="cost_per_unit" id="edit_cost_per_unit" value="{{ $inventory->cost_per_unit }}" step="0.01" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                    </div>
+
+                    <div>
+                        <label for="edit_unit" class="block text-sm font-medium text-gray-700">Unit</label>
+                        <select name="unit" id="edit_unit" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                            <option value="kg" {{ $inventory->unit == 'kg' ? 'selected' : '' }}>Kilogram (kg)</option>
+                            <option value="g" {{ $inventory->unit == 'g' ? 'selected' : '' }}>Gram (g)</option>
+                            <option value="l" {{ $inventory->unit == 'l' ? 'selected' : '' }}>Liter (l)</option>
+                            <option value="ml" {{ $inventory->unit == 'ml' ? 'selected' : '' }}>Milliliter (ml)</option>
+                            <option value="unit" {{ $inventory->unit == 'unit' ? 'selected' : '' }}>Unit</option>
+                            <option value="bag" {{ $inventory->unit == 'bag' ? 'selected' : '' }}>Bag</option>
+                            <option value="spoon" {{ $inventory->unit == 'spoon' ? 'selected' : '' }}>Spoon</option>
+                            <option value="box" {{ $inventory->unit == 'box' ? 'selected' : '' }}>Box</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeEditModal()" class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Cancel</button>
+                    <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openEditModal() {
+    document.getElementById('editInventoryModal').classList.remove('hidden');
+}
+function closeEditModal() {
+    document.getElementById('editInventoryModal').classList.add('hidden');
+}
+</script>
 @endsection

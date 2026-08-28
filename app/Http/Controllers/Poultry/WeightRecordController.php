@@ -23,6 +23,7 @@ class WeightRecordController extends Controller
         Gate::authorize('create', WeightRecord::class);
 
         $batches = Batch::query()
+            ->where('status', 'active')
             ->orderBy('start_date', 'desc')
             ->get();
 
@@ -36,6 +37,13 @@ class WeightRecordController extends Controller
         Gate::authorize('create', WeightRecord::class);
 
         $data = $request->validated();
+
+        // Check batch status
+        $batch = Batch::findOrFail($data['poultry_batch_id']);
+        if ($batch->status !== 'active') {
+            return redirect()->back()->with('error', 'Cannot add records to a closed or completed batch.');
+        }
+
         $weights = $data['individual_weights'] ?? [];
 
         if (is_array($weights) && count($weights) >= 2) {

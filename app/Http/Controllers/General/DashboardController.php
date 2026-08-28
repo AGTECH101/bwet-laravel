@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
 {
-    public function quickRefresh()
-    {
-        return redirect()->route('dashboard')->with('success', 'Dashboard refreshed.');
-    }
+    // public function quickRefresh()
+    // {
+    //     return redirect()->route('dashboard')->with('success', 'Dashboard refreshed.');
+    // }
 
     public function index()
     {

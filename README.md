@@ -1,273 +1,396 @@
-# BWET Farms Management System
+# 🧮 BWET Farms – Poultry Module: Formulas & Logic Blueprint
 
-## Overview
+This document outlines all the mathematical formulas, business rules, and logical flows used in the poultry module. Use it as a reference for development, debugging, and training.
 
-BWET Farms is a digital farm operations and decision-support system built to help farm teams record production data, monitor performance, and support financial decisions using real operational figures. The system is designed around agricultural records that must remain transparent, auditable, and structured for day-to-day farm decisions.
+---
 
-The platform currently focuses on poultry operations, but the architecture is organized so future sectors such as fishery and livestock can be added without breaking the core business rules. The application combines role-based access control, operational record entry, analytical reporting, and financial summaries in a single system.
+## 📦 Core Data Model
 
-## Project Goals
+| Table | Purpose |
+|-------|---------|
+| `poultry_batches` | Stores current batch state + historical aggregates |
+| `batch_state_migrations` | Audit log of all state changes (transfers, feed, expenses, mortality, etc.) |
+| `flock_records` | Daily mortality, culls, and slaughter events |
+| `weight_records` | Individual bird weights with CV calculation |
+| `feed_records` | Daily feed consumption (linked to inventory) |
+| `expenses` | Costs linked to a batch |
+| `inventory_items` | Stock items (feed, medicine, etc.) |
+| `inventory_consumptions` | Usage of inventory items, linked to batch |
 
-- digitize farm records and reduce manual spreadsheet-based reporting
-- enforce role-based access for admin, manager, staff, and investor users
-- support real-time operational monitoring for batches and records
-- keep calculations based on production data rather than unverified assumptions
-- maintain historically fair system settings by ensuring future changes do not alter past decisions
-- provide exports and summaries for team review and financial analysis
+---
 
-## Core Business Rules
+## 1️⃣ Batch State (Checkpoint Approach)
 
-### Role Access
+**Goal:** Store the current state of a batch (count, weight, cost) and update it incrementally – no historical recalculations.
 
-The app separates user responsibilities by role:
+### 1.1 State Fields
 
-- Admin: full system access, user management, approvals, financial oversight, and configuration
-- Manager: operational oversight, batch management, staff support, and performance monitoring without direct access to sensitive financial information in the same way as the admin
-- Staff: daily field entry such as flock counts, weight samples, feed usage, and related forms
-- Investor: financial-facing summaries such as profitability, returns, cost visibility, and performance metrics
+| Column | Description |
+|--------|-------------|
+| `current_count` | Number of birds currently in the batch |
+| `current_weight_kg` | Total weight of all birds in the batch |
+| `current_cost` | Total cost incurred by the batch (excluding cost allocated to slaughters/transfers) |
+| `current_average_weight` | `current_weight_kg / current_count` |
+| `current_average_cost` | `current_cost / current_count` |
+| `total_weight_gain` | Cumulative weight gain (for FCR calculation) |
 
-The role-driven logic is enforced through Laravel gates and route-level authorization patterns. Admins retain a system override, while other roles are limited to their assigned permissions.
+---
 
-## Architecture Overview
+## 2️⃣ Batch State Updates
 
-### Application Layers
+### 2.1 Adding a Record (Feed, Expense, Mortality, etc.)
 
-1. Presentation layer
-   - Blade views under resources/views
-   - role-aware navigation and layouts in the main application views
-2. HTTP layer
-   - controllers under app/Http/Controllers
-   - form requests under app/Http/Requests
-   - route definitions under routes/web.php and routes/sectors/poultry.php
-3. Domain / business logic layer
-   - batch calculations in app/Services/Poultry/BatchCalculationService.php
-   - system variable rules in app/Models/SystemVariable.php
-   - export logic in app/Services/Poultry/ExportService.php
-4. Persistence layer
-   - Eloquent models under app/Models
-   - database migrations in database/migrations
+When a new record is added (e.g., feed consumption, expense, mortality), the state is updated by applying a delta:
 
-### Key Model Relationships
+```
+new_count   = old_count   + Δcount
+new_weight  = old_weight  + Δweight
+new_cost    = old_cost    + Δcost
 
-- User
-  - owns account, role, and approval status
-- Sector
-  - top-level farm segment such as poultry
-- Batch
-  - production cycle for a flock or group of birds
-- FlockRecord
-  - mortality, culls, slaughter, and flock movement entries
-- WeightRecord
-  - individual sample weights and calculation metrics
-- FeedRecord
-  - feed usage and feed conversion tracking
-- Expense
-  - operational cost entries
-- InventoryConsumption
-  - stock usage and cost allocation
-- SystemVariable
-  - configuration values such as profit margin, dress percentage, and operating thresholds
-- MarketPrice
-  - informational external benchmark pricing; it must not directly affect calculations
+new_avg_weight = new_weight / new_count (if new_count > 0 else 0)
+new_avg_cost   = new_cost   / new_count (if new_count > 0 else 0)
+```
 
-## System Configuration and Historical Rules
+**Example – Feed Record:**
+- Δcount = 0
+- Δweight = 0
+- Δcost = feed_used × cost_per_kg
 
-### SystemVariable Behavior
+**Example – Mortality:**
+- Δcount = -mortality
+- Δweight = -mortality × current_avg_weight
+- Δcost = 0 (cost is not reduced – it’s a loss)
 
-System settings are designed so that changes apply only to future calculations. This protects historical records from retroactive changes, which is important for accurate and defensible financial reporting.
+**Example – Expense:**
+- Δcount = 0
+- Δweight = 0
+- Δcost = amount
 
-The rule is implemented by evaluating the effective configuration date associated with each version. When the system value changes, a new version is created with a new effective date, but older records keep their original values.
+All state changes are logged in `batch_state_migrations` with a snapshot of the state before and after.
 
-The key logic is:
+---
 
-- each variable can have multiple versions over time
-- a value applies only from its effective date onward
-- historical calculations are resolved by the closest valid version not after the calculation date
+### 2.2 Batch Transfer (Grading)
 
-This ensures a formula such as profit margin is calculated correctly for a past batch using the margin valid at that time, while current batches use the latest approved value.
+Transfers move birds, weight, and cost from a source batch to a destination batch.
 
-## Poultry Calculation Logic
+**Transfer Amounts:**
+```
+transfer_weight = transfer_count × source.current_average_weight
+transfer_cost   = transfer_count × source.current_average_cost
+```
 
-### 1. Required Sample Size
+**Source Batch (after transfer):**
+```
+new_count  = old_count - transfer_count
+new_weight = old_weight - transfer_weight
+new_cost   = old_cost   - transfer_cost
+new_avg_weight = new_weight / new_count
+new_avg_cost   = new_cost   / new_count
+```
 
-The system determines the minimum sample size based on remaining flock size.
+**Destination Batch (after transfer):**
+```
+new_count  = old_count + transfer_count
+new_weight = old_weight + transfer_weight
+new_cost   = old_cost   + transfer_cost
+new_avg_weight = new_weight / new_count
+new_avg_cost   = new_cost   / new_count
+```
 
-Formula:
+**Audit:** A `batch_state_migration` record is created for both source and destination (type `transfer_out` and `transfer_in`).
 
-$$
-requiredSample = \min(\max(\lceil remainingFlock \times 0.10 \rceil, 5), 10)
-$$
+---
 
-This ensures:
-- the sample is never less than 5 birds
-- the sample is never more than 10 birds
-- the sample follows a 10% rule on flock size while keeping a practical cap
+## 3️⃣ Cost & Financial Metrics
 
-### 2. Weight Variance and Coefficient of Variation (CV)
+### 3.1 Cost per Bird (COP)
 
-For weight records, the app calculates the mean and the standard deviation of the sample and then computes the coefficient of variation.
+```
+COP_per_bird = current_cost / current_count
+```
+This is the live average cost per bird (unallocated costs only – costs already assigned to slaughtered or transferred birds are excluded).
 
-Formula:
+### 3.2 Cost per kg (dressed)
 
-$$
-\mu = \frac{\sum w_i}{n}
-$$
+```
+live_weight = current_average_weight
+dress_percentage = system_variable('dress_percentage', 75)
+dressed_weight = live_weight × (dress_percentage / 100)
+cost_per_kg = COP_per_bird / dressed_weight
+```
 
-$$
-\sigma = \sqrt{\frac{\sum (w_i - \mu)^2}{n}}
-$$
+### 3.3 Selling Price per kg (Recommended)
 
-$$
-CV = \left(\frac{\sigma}{\mu}\right) \times 100
-$$
+```
+profit_margin = system_variable('profit_margin', 20)
+selling_price_per_kg = cost_per_kg × (1 + profit_margin / 100)
+```
 
-Interpretation:
-- CV < 10%: excellent uniformity
-- 10% to < 12%: caution
-- 12% to < 15%: warning
-- CV >= 15%: rejected sample
+### 3.4 Selling Price per Bird
 
-This is strictly enforced in both the browser and the backend. A sample with CV >= 15% is blocked from submission and the user is asked to remeasure.
+```
+selling_price_per_bird = COP_per_bird × (1 + profit_margin / 100)
+```
 
-### 3. Current Average Weight
+### 3.5 Selling Price per Carton (10 kg)
 
-The system derives current average weight from batch weight history and interpolates values between known record points where necessary.
+```
+selling_price_per_carton = selling_price_per_kg × 10
+```
 
-### 4. Cost Per Bird
+---
 
-The system calculates the effective cost per bird as the remaining unallocated investment divided by current remaining flock.
+## 4️⃣ Slaughter Cost Allocation
 
-Formula:
+When birds are slaughtered, we allocate a portion of the batch’s cost to those birds. This prevents costs from being assigned to birds that no longer exist.
 
-$$
-CostPerBird = \frac{TotalInvestment - CostAllocatedSoFar}{RemainingFlock}
-$$
+**Variables:**
+- `total_COP` = current cost of the batch (before allocation)
+- `allocated_COP` = cost already allocated to previous slaughters/transfers
+- `remaining_fish` = current count before slaughter
+- `harvest_quantity` = number of birds slaughtered
 
-### 5. Cost Per Kg
+**Steps:**
+```
+unallocated_COP = total_COP - allocated_COP
+COP_per_fish   = unallocated_COP / remaining_fish
+harvest_COP    = COP_per_fish × harvest_quantity
+allocated_COP  = allocated_COP + harvest_COP
+remaining_fish = remaining_fish - harvest_quantity
+```
 
-The dressed weight determines the cost in terms of kilo output.
+**Note:** This logic is used for slaughter records (poultry) and will also be used for fishery harvests.
 
-$$
-DressedWeightPerBird = LiveWeight \times \left(\frac{DressPercentage}{100}\right)
-$$
+---
 
-$$
-CostPerKg = \frac{CostPerBird}{DressedWeightPerBird}
-$$
+## 5️⃣ Feed Conversion Ratio (FCR)
 
-### 6. Selling Price Logic
+### 5.1 Cumulative FCR (cFCR)
 
-The app calculates a target selling price using the configured profit margin.
+Measures overall feed efficiency from the start of the batch.
 
-$$
-SellingPricePerBird = CostPerBird \times (1 + \frac{ProfitMargin}{100})
-$$
+```
+cFCR = total_feed_used / total_weight_gain
+```
 
-$$
-SellingPricePerKg = \frac{SellingPricePerBird}{DressedWeightPerBird}
-$$
+### 5.2 Instantaneous FCR (iFCR)
 
-### 7. Price Calculator Feature
+Measures feed efficiency over a recent period (e.g., last `n` days).
 
-The price calculator is a poultry-specific feature with this formula:
+```
+iFCR = feed_used_in_period / weight_gained_in_period
+```
 
-$$
-CalculatedPrice = \frac{CostOfProduction \times CurrentAverageWeight}{ModWeight}
-$$
+**Weight gained in period:** derived from weight records (or from checkpoint state).
 
-Inputs:
-- selected batch
-- cost of production for the selected batch
-- current average weight of the selected batch
-- mod_weight: the weight of the most frequent bird size (10 weight observations combined into a modal-weight estimate)
+**Interpretation:**
+- `iFCR < cFCR` → Fish are performing better than historical average.
+- `iFCR ≈ cFCR` → Performance is consistent.
+- `iFCR > cFCR` → Performance is declining (warning).
 
-The calculator is designed specifically for poultry and is not a general finance formula for all sectors.
+---
 
-## Record-Taking Workflow
+## 6️⃣ Weight Records & CV
 
-### Weight Record Flow
+### 6.1 Sample Size
 
-1. Select batch
-2. Capture date
-3. Enter 10 sample weights
-4. Live JS calculates average weight, total weight, and CV
-5. If CV >= 15%, the form blocks submission
-6. Valid records update batch metrics after save
-7. Batch-level cached metrics are refreshed automatically
+```
+required_sample = min(max(ceil(remaining_flock × 0.10), 5), 10)
+```
+> Minimum 5 birds, maximum 10.
 
-### Batch update mechanics
+### 6.2 Coefficient of Variation (CV)
 
-After a valid record saving event, the system recalculates:
-- remaining flock
-- weight gain
-- cost values
-- performance indicators
-- current profit and profit margin usage
+```
+mean = sum(weights) / count(weights)
+variance = Σ(weight - mean)² / count
+stddev = √variance
+CV = (stddev / mean) × 100
+```
 
-This ensures the dashboard and financial views reflect the latest valid operational record.
+### 6.3 CV Status Interpretation (Poultry)
 
-## Export System
+| CV Range | Status | Action |
+|----------|--------|--------|
+| < 10%    | Excellent | Uniform flock |
+| 10–12%   | Caution   | Monitor |
+| 12–15%   | Warning   | Check feeding/health |
+| ≥ 15%    | Rejected  | Re‑take sample (invalid) |
 
-The export controller and export service support report generation for different use cases:
+---
 
-- batch export
-- database export
-- analytics export
-- financial export
+## 7️⃣ Price Calculator
 
-The export system supports multiple output formats such as Excel and CSV. The user selects a report template before export, and batch export requires the specific batch selection. Quick export actions are implemented as POST submissions so they trigger actual file generation rather than a page reload.
+Used to determine selling price for a specific customer order based on the customer’s desired bird weight and the batch’s mode weight.
 
-## Financial Integrity Rules
+**Inputs:**
+- `customer_bird_weight` – weight of the bird the customer wants (kg)
+- `mode_weight` – most frequent/dominant weight in the batch (kg)
+- `profit_margin` – target margin (from system variables)
 
-### Market Price Usage
+**Formula:**
+```
+cost_scaled = (customer_bird_weight / mode_weight) × current_average_cost
+selling_price_per_bird = cost_scaled × (1 + profit_margin / 100)
+```
+**Derived:**
+```
+dressed_weight = customer_bird_weight × (dress_percentage / 100)
+selling_price_per_kg = selling_price_per_bird / dressed_weight
+selling_price_per_carton = selling_price_per_kg × 10
+```
 
-Market prices are informational and are not used in production-batch calculation formulas. This separation ensures farm decisions are based on internal operating cost and performance data rather than external market fluctuations alone.
+---
 
-### Future-Only System Effects
+## 8️⃣ Inventory & Consumption
 
-System variables such as profit margin and dress percentage are versioned and dated. This means:
-- old figures remain valid for past analyses
-- new values only affect future calculations
-- historical decisions remain stable and reviewable
+### 8.1 Stock Update
 
-## Security and Access Control
+When a feed record is created:
+```
+inventory.quantity_in_stock -= feed_used
+inventory.quantity_used    += feed_used
+```
 
-The app uses Laravel authorization gates and route protection. Authenticated users are required for sector routes, and each role is restricted to the operations it is meant to oversee. The registration flow supports internal user creation by admin and manager, while public self-registration remains available with an approval process.
+### 8.2 Cost Addition
 
-## Public Landing Page
+When an inventory item is consumed, its cost is added to the batch’s `current_cost`:
+```
+batch.current_cost += feed_used × cost_per_unit
+```
 
-The landing page promotes BWET Farms as a digitalized farm platform. It communicates the farm’s operations, automation, automation of records, and the use of technology for more accurate and data-driven agricultural decision-making.
+---
 
-The page also makes the investment opportunity clear and includes the contact number:
+## 9️⃣ Batch Age (Dynamic)
 
-+234 703 868 7630
-
-## Repository Structure
-
-- app/Http/Controllers — HTTP logic and routing handlers
-- app/Http/Requests — form validation and input handling
-- app/Models — data entities and domain behavior
-- app/Services — central business calculation services
-- app/Providers — auth and Fortify integration
-- resources/views — Blade UI templates
-- routes — route definitions by feature area
-- database/migrations — schema and versioning
-- tests — regression and behavioral validation
-
-## Testing and Validation
-
-The project includes feature tests for route presence and system-variable behavior. These tests verify the key guarantees that the app depends on:
-
-- required poultry views exist
-- future-only system variable changes are respected
-- invalid high-variation weight samples are prevented
-
-## Summary
-
-BWET Farms is a role-aware agricultural management platform that combines operational records, batch calculations, financial logic, user permissions, and export reporting into a single system. Its design emphasizes accuracy, historical integrity, and decision-ready reporting, with a focus on poultry production data that directly influencing financial records.
-
-This project is structured so each module has a clear purpose and each formula can be reviewed and traced back to the exact operational input it is based on.
-
-## License
-
-This project is intended for the BWET Farms operational system and follows the project’s local delivery and usage requirements.
+Age is calculated on‑the‑fly, not stored.
+```
+age_days = today - start_date
+```
+
+Used for sorting and display. The stored `current_age_days` is kept for sorting performance.
+
+---
+
+## 🔟 System Variables
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `profit_margin` | 20 | Target profit margin (%) |
+| `dress_percentage` | 75 | Dressing out percentage (live → dressed) |
+| `weighing_frequency_days` | 4 | Days between scheduled weighings |
+| `daily_profit_tolerance` | -15 | Daily profit % threshold for alert |
+| `fcr_efficiency_tolerance` | 20 | FCR efficiency drop threshold (%) |
+| `stop_loss_amount` | 20000 | Maximum loss before alert (₦) |
+
+---
+
+## 1️⃣1️⃣ Slaughter Triggers (Automated Alerts)
+
+| Trigger | Condition | Severity |
+|---------|-----------|----------|
+| Daily profit | `current_marginal_profit_percent <= daily_profit_tolerance` | Critical |
+| FCR efficiency | `(iFCR / cFCR - 1) × 100 >= fcr_efficiency_tolerance` | Warning |
+| Stop‑loss | `peak_profit - current_profit >= stop_loss_amount` | Critical |
+| Missed weighings | 3+ missed scheduled weighings | Emergency |
+| Weight loss | > 5% loss between consecutive weight records | Emergency |
+| High mortality | `total_mortality / starting_flock × 100 >= 7%` | Emergency |
+
+---
+
+## 1️⃣2️⃣ Pen Assignment
+
+When a batch is created with phase `batch`:
+- The system finds an available pen (`Pen::available()`).
+- If a pen is found and its capacity ≥ starting flock, assign it.
+- Otherwise, warn the user but allow creation.
+
+---
+
+## 1️⃣3️⃣ Migration Log (Audit Trail)
+
+Every state change is recorded in `batch_state_migrations`:
+
+| Column | Description |
+|--------|-------------|
+| `source_batch_id` | Batch being modified |
+| `destination_batch_id` | Batch receiving (for transfers) |
+| `migration_type` | `feed`, `expense`, `mortality`, `cull`, `slaughter`, `transfer_out`, `transfer_in`, `weight_gain` |
+| `count_moved` | Number of birds changed |
+| `weight_moved` | Weight changed (kg) |
+| `cost_moved` | Cost changed (₦) |
+| `source_state_before` | JSON snapshot of source before change |
+| `destination_state_before` | JSON snapshot of destination before change |
+
+---
+
+## 🧭 Flowchart Summary
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                   BATCH CREATION                                 │
+│  - start_date, starting_flock, initial_chicken_cost             │
+│  - phase (brooding / batch)                                     │
+│  - pen assignment (if batch phase)                              │
+│  - checkpoint columns initialized                               │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   DAILY OPERATIONS                              │
+│  ┌───────────────────┐  ┌───────────────────┐  ┌──────────────┐│
+│  │   Feed Record     │  │  Weight Record    │  │ Flock Record ││
+│  │  - feed_used      │  │  - individual     │  │ - mortality  ││
+│  │  - cost_per_kg    │  │    weights        │  │ - culls      ││
+│  │  - total_cost     │  │  - CV calculation │  │ - slaughter  ││
+│  │                   │  │  - status update  │  │ - allocation ││
+│  └───────────────────┘  └───────────────────┘  └──────────────┘│
+│         │                        │                        │      │
+│         └────────────────────────┼────────────────────────┘      │
+│                                  ▼                               │
+│          ┌──────────────────────────────────────────────┐       │
+│          │  Batch State Update (Checkpoint)             │       │
+│          │  - current_count, current_weight_kg,        │       │
+│          │    current_cost                             │       │
+│          │  - log to batch_state_migrations            │       │
+│          └──────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   TRANSFER (Grading)                            │
+│  - source: subtract count, weight, cost                        │
+│  - destination: add count, weight, cost                        │
+│  - log transfer_out and transfer_in migrations                 │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   HARVEST (Slaughter)                           │
+│  - allocate cost using harvest allocation formula              │
+│  - update allocated_COP and remaining_count                    │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   ANALYTICS & INSIGHTS                          │
+│  - FCR (cFCR, iFCR)                                            │
+│  - Growth charts (weight vs age)                               │
+│  - Profit margins                                              │
+│  - Slaughter triggers                                          │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## ✅ Final Notes
+
+- All formulas are implemented in **`BatchCalculationService`**, **`BatchStateService`**, and the various controllers.
+- The **checkpoint approach** ensures that historical records are never recalculated – only the current state is updated.
+- The **migration log** provides full auditability.
+- All logic is **sector‑independent** and will be reused for the fishery module.
+
+---
+
+*This document is maintained as the single source of truth for all calculations in the BWET Farms poultry module.*

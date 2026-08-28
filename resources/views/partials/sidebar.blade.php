@@ -48,13 +48,13 @@
             </a>
         @endif
 
-        @if(in_array($userRole, ['admin', 'investor'], true))
+        {{-- @if(in_array($userRole, ['admin', 'investor'], true))
             <a href="{{ route('poultry.analytics.global') }}"
                class="{{ request()->routeIs('poultry.analytics.*') ? 'bg-primary-50 text-primary-700 border-primary-500' : 'text-gray-700 hover:bg-gray-100' }} group flex items-center px-3 py-2 text-sm font-medium rounded-lg border-l-4 border-transparent">
                 <i class="fas fa-chart-line mr-3 text-gray-400 group-hover:text-gray-500 {{ request()->routeIs('poultry.analytics.*') ? 'text-primary-500' : '' }}"></i>
                 Analytics
             </a>
-        @endif
+        @endif --}}
 
         @if(in_array($userRole, ['admin', 'manager'], true))
             <a href="{{ route('observations.index') }}"
@@ -72,13 +72,13 @@
             </a>
         @endif
 
-        @if(in_array($userRole, ['admin', 'manager'], true))
+        {{-- @if(in_array($userRole, ['admin', 'manager'], true))
             <a href="{{ route('export.index') }}"
                class="{{ request()->routeIs('export.*') ? 'bg-primary-50 text-primary-700 border-primary-500' : 'text-gray-700 hover:bg-gray-100' }} group flex items-center px-3 py-2 text-sm font-medium rounded-lg border-l-4 border-transparent">
                 <i class="fas fa-file-export mr-3 text-gray-400 group-hover:text-gray-500 {{ request()->routeIs('export.*') ? 'text-primary-500' : '' }}"></i>
                 Export Data
             </a>
-        @endif
+        @endif --}}
 
         @if(in_array($userRole, ['admin', 'manager'], true))
             <a href="{{ route('admin.users.create') }}"

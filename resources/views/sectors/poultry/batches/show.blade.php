@@ -10,7 +10,7 @@
         </h1>
         <div class="flex items-center space-x-4 mt-2">
             <span class="text-sm text-gray-600"><i class="fas fa-calendar-alt mr-1"></i> Started {{ $batch->start_date->format('M d, Y') }}</span>
-            <span class="text-sm text-gray-600"><i class="fas fa-clock mr-1"></i> {{ $batch->current_age_days }} days old</span>
+            <span class="text-sm text-gray-600"><i class="fas fa-clock mr-1"></i> {{ $batch->age_days }} days old</span>
             {!! batch_status_badge($batch->status) !!}
             @if($batch->is_manual_mode)
             <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
@@ -36,7 +36,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow p-4 border-l-4 border-blue-500">
             <h3 class="text-sm font-medium text-blue-700"><i class="fas fa-hourglass-half mr-1"></i>Age</h3>
-            <p class="text-2xl font-bold text-blue-900 mt-2">{{ max(0, (int) $batch->current_age_days) }} <span class="text-sm">days</span></p>
+            <p class="text-2xl font-bold text-blue-900 mt-2">{{ max(0, (int) $batch->age_days) }} <span class="text-sm">days</span></p>
         </div>
         @if(auth()->user()->role === 'admin')
         <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg shadow p-4 border-l-4 border-emerald-500">

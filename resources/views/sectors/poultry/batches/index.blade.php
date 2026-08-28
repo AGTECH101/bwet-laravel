@@ -117,7 +117,7 @@
                                 <div class="text-sm text-gray-900">{{ $batch->remaining_flock }}/{{ $batch->starting_flock }}</div>
                             </div>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $batch->current_age_days }} days</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $batch->age_days }} days</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center space-x-4">
                                 <div><div class="text-sm">{{ format_weight($batch->getCurrentAverageWeight()) }}</div><div class="text-xs text-gray-500">Weight</div></div>

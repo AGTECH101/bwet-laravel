@@ -9,6 +9,7 @@ use App\Models\Poultry\FeedRecord;
 use App\Models\Poultry\InventoryItem;
 use App\Models\Poultry\InventoryConsumption;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\DB;
 
 class FeedRecordController extends Controller
 {
@@ -24,6 +25,7 @@ class FeedRecordController extends Controller
         Gate::authorize('create', FeedRecord::class);
 
         $batches = Batch::query()
+            ->where('status', 'active')
             ->orderBy('start_date', 'desc')
             ->get();
 
@@ -39,37 +41,47 @@ class FeedRecordController extends Controller
         Gate::authorize('create', FeedRecord::class);
 
         $data = $request->validated();
-        $data['recorded_by_id'] = auth()->id();
 
+        // Check batch status
+        $batch = Batch::findOrFail($data['poultry_batch_id']);
+        if ($batch->status !== 'active') {
+            return redirect()->back()->with('error', 'Cannot add records to a closed or completed batch.');
+        }
+
+        // Get inventory item and calculate costs
         $item = InventoryItem::findOrFail($data['inventory_item_id']);
         $data['feed_cost_per_kg'] = $item->cost_per_unit;
         $data['total_feed_cost'] = $data['feed_used'] * $item->cost_per_unit;
         $data['feed_per_bird'] = 0;
+        $data['recorded_by_id'] = auth()->id();
 
-        $record = FeedRecord::create($data);
+        DB::transaction(function () use ($data, $batch, $item) {
+            // Create the feed record
+            $record = FeedRecord::create($data);
 
-        // Manually create inventory consumption and update stock
-        $consumption = InventoryConsumption::create([
-            'inventory_item_id' => $item->id,
-            'poultry_batch_id' => $record->poultry_batch_id,
-            'quantity_used' => $data['feed_used'],
-            'date' => $record->date,
-            'recorded_by_id' => auth()->id(),
-            'source_type' => 'feed',
-            'source_id' => $record->id,
-            'unit_cost_at_time' => $item->cost_per_unit,
-            'total_cost' => $data['feed_used'] * $item->cost_per_unit,
-        ]);
+            // Update batch state: add cost
+            $changes = [
+                'count' => 0,
+                'weight' => 0,
+                'cost' => $record->total_feed_cost,
+            ];
+            $batch->updateState($changes, 'feed');
 
-        // Update inventory stock
-        $item->quantity_in_stock -= $data['feed_used'];
-        $item->quantity_used += $data['feed_used'];
-        $item->save();
+            // Also update total_feed_used for FCR calculation
+            $batch->total_feed_used += $record->feed_used;
+            $batch->save();
 
-        // Update batch metrics
-        $record->batch->updateCachedMetrics();
+            // Update inventory stock (via observer or manually)
+            // Using the observer ensures consistency, but we can also manually update.
+            // The observer is triggered on FeedRecord creation.
+            // We'll rely on the observer (registered in EventServiceProvider).
+            // The observer will create InventoryConsumption and adjust stock.
 
-        return redirect()->route('poultry.batches.show', $record->batch)
+            // After the observer runs, we still need to update FCR-related fields
+            $batch->updateCachedMetrics(); // this will recalc FCR based on total_feed_used and weight_gain
+        });
+
+        return redirect()->route('poultry.batches.show', $batch)
             ->with('success', 'Feed record saved. Inventory stock and batch cost were updated.');
     }
 
@@ -89,46 +101,89 @@ class FeedRecordController extends Controller
         Gate::authorize('update', $feedRecord);
 
         $data = $request->validated();
-        $newItem = InventoryItem::findOrFail($data['inventory_item_id']);
 
-        // Remove old consumption and restore stock
-        $oldConsumption = InventoryConsumption::where('source_type', 'feed')
-            ->where('source_id', $feedRecord->id)
-            ->first();
+        DB::transaction(function () use ($feedRecord, $data) {
+            $batch = $feedRecord->batch;
+            $oldFeedUsed = $feedRecord->feed_used;
+            $oldTotalCost = $feedRecord->total_feed_cost;
+            $newFeedUsed = $data['feed_used'];
+            $newItem = InventoryItem::findOrFail($data['inventory_item_id']);
+            $newTotalCost = $newFeedUsed * $newItem->cost_per_unit;
 
-        if ($oldConsumption) {
-            $oldItem = $feedRecord->inventoryItem;
-            $oldItem->quantity_in_stock += $oldConsumption->quantity_used;
-            $oldItem->quantity_used -= $oldConsumption->quantity_used;
-            $oldItem->save();
-            $oldConsumption->delete();
-        }
+            // Remove old stock adjustment (via observer deletion)
+            // The observer will handle this automatically when we delete and recreate.
+            // But we need to reverse the old state changes first.
+            $oldChanges = [
+                'count' => 0,
+                'weight' => 0,
+                'cost' => -$oldTotalCost,
+            ];
+            $batch->updateState($oldChanges, 'feed');
 
-        // Update record with new data
-        $data['feed_cost_per_kg'] = $newItem->cost_per_unit;
-        $data['total_feed_cost'] = $data['feed_used'] * $newItem->cost_per_unit;
-        $data['feed_per_bird'] = 0;
+            // Restore total_feed_used
+            $batch->total_feed_used -= $oldFeedUsed;
+            $batch->save();
 
-        $feedRecord->update($data);
+            // Update the feed record
+            $feedRecord->inventory_item_id = $data['inventory_item_id'];
+            $feedRecord->feed_used = $newFeedUsed;
+            $feedRecord->feed_cost_per_kg = $newItem->cost_per_unit;
+            $feedRecord->total_feed_cost = $newTotalCost;
+            $feedRecord->feed_per_bird = 0;
+            $feedRecord->date = $data['date'];
+            $feedRecord->save();
 
-        // Create new consumption and update stock
-        InventoryConsumption::create([
-            'inventory_item_id' => $newItem->id,
-            'poultry_batch_id' => $feedRecord->poultry_batch_id,
-            'quantity_used' => $data['feed_used'],
-            'date' => $feedRecord->date,
-            'recorded_by_id' => auth()->id(),
-            'source_type' => 'feed',
-            'source_id' => $feedRecord->id,
-            'unit_cost_at_time' => $newItem->cost_per_unit,
-            'total_cost' => $data['feed_used'] * $newItem->cost_per_unit,
-        ]);
+            // Apply new state changes
+            $newChanges = [
+                'count' => 0,
+                'weight' => 0,
+                'cost' => $newTotalCost,
+            ];
+            $batch->updateState($newChanges, 'feed');
 
-        $newItem->quantity_in_stock -= $data['feed_used'];
-        $newItem->quantity_used += $data['feed_used'];
-        $newItem->save();
+            // Update total_feed_used
+            $batch->total_feed_used += $newFeedUsed;
+            $batch->save();
 
-        $feedRecord->batch->updateCachedMetrics();
+            // Update inventory (observer handles new consumption)
+            // We need to manually create a new consumption because the observer only triggers on create.
+            // But we can also rely on the observer if we delete and recreate. However, for simplicity,
+            // we'll manually adjust stock here.
+
+            // If the item changed, we need to adjust both old and new items.
+            // This is complex; for now, we'll just delete the old consumption and create a new one.
+            $oldConsumption = InventoryConsumption::where('source_type', 'feed')
+                ->where('source_id', $feedRecord->id)
+                ->first();
+            if ($oldConsumption) {
+                // Restore old item stock
+                $oldItem = $feedRecord->inventoryItem;
+                $oldItem->quantity_in_stock += $oldConsumption->quantity_used;
+                $oldItem->quantity_used -= $oldConsumption->quantity_used;
+                $oldItem->save();
+                $oldConsumption->delete();
+            }
+
+            // Create new consumption
+            InventoryConsumption::create([
+                'inventory_item_id' => $newItem->id,
+                'poultry_batch_id' => $batch->id,
+                'quantity_used' => $newFeedUsed,
+                'date' => $feedRecord->date,
+                'recorded_by_id' => auth()->id(),
+                'source_type' => 'feed',
+                'source_id' => $feedRecord->id,
+                'unit_cost_at_time' => $newItem->cost_per_unit,
+                'total_cost' => $newTotalCost,
+            ]);
+
+            // Adjust new item stock
+            $newItem->quantity_in_stock -= $newFeedUsed;
+            $newItem->quantity_used += $newFeedUsed;
+            $newItem->save();
+
+            $batch->updateCachedMetrics();
+        });
 
         return redirect()->route('poultry.batches.show', $feedRecord->batch)
             ->with('success', 'Feed record updated.');
@@ -138,23 +193,26 @@ class FeedRecordController extends Controller
     {
         Gate::authorize('delete', $feedRecord);
 
-        $batch = $feedRecord->batch;
+        DB::transaction(function () use ($feedRecord) {
+            $batch = $feedRecord->batch;
 
-        // Restore stock from associated consumption
-        $consumption = InventoryConsumption::where('source_type', 'feed')
-            ->where('source_id', $feedRecord->id)
-            ->first();
+            // Reverse state changes
+            $changes = [
+                'count' => 0,
+                'weight' => 0,
+                'cost' => -$feedRecord->total_feed_cost,
+            ];
+            $batch->updateState($changes, 'feed');
 
-        if ($consumption) {
-            $item = $consumption->inventoryItem;
-            $item->quantity_in_stock += $consumption->quantity_used;
-            $item->quantity_used -= $consumption->quantity_used;
-            $item->save();
-            $consumption->delete();
-        }
+            // Update total_feed_used
+            $batch->total_feed_used -= $feedRecord->feed_used;
+            $batch->save();
 
-        $feedRecord->delete();
-        $batch->updateCachedMetrics();
+            // The observer will handle stock restoration on deletion
+            $feedRecord->delete();
+
+            $batch->updateCachedMetrics();
+        });
 
         return redirect()->back()->with('success', 'Feed record deleted.');
     }

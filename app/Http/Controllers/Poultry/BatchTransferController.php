@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Poultry;
 
 use App\Http\Controllers\Controller;
+use App\Models\BatchStateMigration;
 use App\Models\Poultry\Batch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 class BatchTransferController extends Controller
 {
@@ -14,8 +15,13 @@ class BatchTransferController extends Controller
     {
         Gate::authorize('viewAny', Batch::class);
 
-        $batches = Batch::where('status', 'active')->orderBy('created_at', 'desc')->get();
-        $selectedFrom = $request->filled('from_batch') ? Batch::where('batch_id', $request->from_batch)->first() : null;
+        $batches = Batch::where('status', 'active')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $selectedFrom = $request->filled('from_batch')
+            ? Batch::where('batch_id', $request->from_batch)->first()
+            : null;
 
         return view('sectors.poultry.forms.batch-transfer', compact('batches', 'selectedFrom'));
     }
@@ -34,66 +40,46 @@ class BatchTransferController extends Controller
         $source = Batch::findOrFail($validated['from_batch']);
         $destination = Batch::findOrFail($validated['to_batch']);
 
+        // Ensure source has enough birds
         $transferCount = (int) $validated['birds_to_transfer'];
-        if ($transferCount > (int) $source->remaining_flock) {
+        if ($transferCount > $source->current_count) {
             return back()->withInput()->withErrors([
-                'birds_to_transfer' => 'Transfer quantity cannot exceed the remaining flock in the source batch.',
+                'birds_to_transfer' => 'Cannot transfer more than the current count (' . $source->current_count . ' birds).',
             ]);
         }
 
-        // Get current average weights
-        $sourceAverageWeight = (float) $source->getCurrentAverageWeight();
-        $destinationAverageWeight = (float) $destination->getCurrentAverageWeight();
-
-        // Calculate cost per bird for the source using only initial chicken cost
-        // (other costs like feed and expenses stay with the batch)
-        $sourceCostPerBird = $source->remaining_flock > 0
-            ? (float) $source->initial_chicken_cost / $source->remaining_flock
-            : 0;
-
-        $sourceTransferCost = $sourceCostPerBird * $transferCount;
-
-        // --- Update source batch ---
-        $source->remaining_flock = max(0, $source->remaining_flock - $transferCount);
-        $source->initial_chicken_cost = max(0, $source->initial_chicken_cost - $sourceTransferCost);
-        // DO NOT modify cost_allocated_so_far - it tracks slaughter allocations
-
-        // --- Update destination batch ---
-        $destination->remaining_flock += $transferCount;
-        $destination->initial_chicken_cost += $sourceTransferCost;
-        // DO NOT modify cost_allocated_so_far
-
-        // --- Update average weight (if column exists) ---
-        if (Schema::hasColumn('poultry_batches', 'current_average_weight')) {
-            // Source: if birds remain, average weight stays the same (we assume transferred birds are representative)
-            $source->current_average_weight = $source->remaining_flock > 0 ? $sourceAverageWeight : 0;
-
-            // Destination: compute new average weight including transferred birds
-            if ($destination->remaining_flock > 0) {
-                $totalWeightBefore = ($destination->remaining_flock - $transferCount) * $destinationAverageWeight;
-                $totalWeightTransferred = $transferCount * $sourceAverageWeight;
-                $destination->current_average_weight = ($totalWeightBefore + $totalWeightTransferred) / $destination->remaining_flock;
-            } else {
-                $destination->current_average_weight = 0;
-            }
+        // Ensure both batches are active (optional)
+        if ($source->status !== 'active' || $destination->status !== 'active') {
+            return back()->withInput()->withErrors([
+                'from_batch' => 'Both batches must be active to perform a transfer.',
+            ]);
         }
 
-        // Save both batches
-        $source->save();
-        $destination->save();
+        // Calculate the amount to transfer
+        $transferWeight = $transferCount * $source->current_average_weight;
+        $transferCost = $transferCount * $source->current_average_cost;
 
-        // Recalculate all cached metrics for both batches
-        $source->updateCachedMetrics();
-        $destination->updateCachedMetrics();
+        // Execute transaction
+        DB::transaction(function () use ($source, $destination, $transferCount, $transferWeight, $transferCost) {
+            // Source: apply negative changes
+            $sourceChanges = [
+                'count' => -$transferCount,
+                'weight' => -$transferWeight,
+                'cost' => -$transferCost,
+            ];
+            $source->updateState($sourceChanges, 'transfer_out', $destination);
 
-        // Create a notification (optional)
-        \App\Models\Notification::createGlobal(
-            'batch_transfer',
-            "Batch Transfer Completed",
-            "Transferred {$transferCount} birds from {$source->batch_id} to {$destination->batch_id}",
-            auth()->user(),
-            $destination
-        );
+            // Destination: apply positive changes (already handled by updateState's destination logic)
+            // But we need to ensure the destination receives the birds. The updateState method
+            // automatically applies the inverse to the destination if provided.
+            // However, updateState also logs a 'transfer_in' for the destination.
+            // So we don't need to call anything else – it's handled inside updateState.
+
+            // Update other cached fields (like total_feed_used etc.) – not needed for checkpoint,
+            // but we keep for compatibility.
+            $source->updateCachedMetrics();
+            $destination->updateCachedMetrics();
+        });
 
         return redirect()->route('poultry.forms.hub')
             ->with('success', "Successfully transferred {$transferCount} birds from {$source->batch_id} to {$destination->batch_id}.");

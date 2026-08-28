@@ -12,9 +12,6 @@ use Illuminate\Support\Facades\Gate;
 
 class InventoryConsumptionController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index(Request $request)
     {
         Gate::authorize('viewAny', InventoryConsumption::class);
@@ -36,9 +33,6 @@ class InventoryConsumptionController extends Controller
         return view('sectors.poultry.inventory-consumptions.index', compact('consumptions', 'inventoryItems', 'batches'));
     }
 
-    /**
-     * Show the form for creating a new consumption.
-     */
     public function create(Request $request)
     {
         Gate::authorize('create', InventoryConsumption::class);
@@ -64,14 +58,19 @@ class InventoryConsumptionController extends Controller
         return view('sectors.poultry.forms.inventory-consumption', compact('inventoryItems', 'batches'))->with('isWaste', true);
     }
 
-    /**
-     * Store a newly created consumption.
-     */
     public function store(InventoryConsumptionRequest $request)
     {
         Gate::authorize('create', InventoryConsumption::class);
 
         $data = $request->validated();
+
+        if (!empty($data['poultry_batch_id'])) {
+            $batch = Batch::findOrFail($data['poultry_batch_id']);
+            if ($batch->status !== 'active') {
+                return redirect()->back()->with('error', 'Cannot add consumption to a closed or completed batch.');
+            }
+        }
+
         $item = InventoryItem::findOrFail($data['inventory_item_id']);
 
         if ((float) $data['quantity_used'] > (float) $item->quantity_in_stock) {
@@ -125,6 +124,13 @@ class InventoryConsumptionController extends Controller
             'notes' => ['required', 'string', 'min:20', 'max:1500'],
         ]);
 
+        if (!empty($validated['poultry_batch_id'])) {
+            $batch = Batch::findOrFail($validated['poultry_batch_id']);
+            if ($batch->status !== 'active') {
+                return redirect()->back()->with('error', 'Cannot add waste to a closed or completed batch.');
+            }
+        }
+
         $item = InventoryItem::findOrFail($validated['inventory_item_id']);
         if ((float) $validated['quantity_used'] > (float) $item->quantity_in_stock) {
             return back()->withInput()->withErrors(['quantity_used' => 'Waste quantity cannot exceed the current stock on hand.']);
@@ -147,9 +153,6 @@ class InventoryConsumptionController extends Controller
             ->with('success', 'Inventory waste was recorded successfully. No batch cost was inflated.');
     }
 
-    /**
-     * Remove the specified consumption.
-     */
     public function destroy(InventoryConsumption $consumption)
     {
         Gate::authorize('delete', $consumption);

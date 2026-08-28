@@ -90,7 +90,7 @@ Route::middleware(['auth', 'verified', 'sector.selected'])->group(function () {
     Route::put('/profile', [\App\Http\Controllers\General\ProfileController::class, 'update'])->name('profile.update');
 
     // Quick refresh endpoint
-    Route::post('/quick-refresh', [DashboardController::class, 'quickRefresh'])->name('quick-refresh');
+    // Route::post('/quick-refresh', [DashboardController::class, 'quickRefresh'])->name('quick-refresh');
 
     // Load all sector-specific routes (they will be prefixed with the sector slug)
     require base_path('routes/sectors/poultry.php');

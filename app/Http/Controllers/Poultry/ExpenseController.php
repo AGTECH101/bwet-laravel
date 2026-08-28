@@ -7,6 +7,7 @@ use App\Http\Requests\Poultry\ExpenseRequest;
 use App\Models\Poultry\Batch;
 use App\Models\Poultry\Expense;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\DB;
 
 class ExpenseController extends Controller
 {
@@ -22,6 +23,7 @@ class ExpenseController extends Controller
         Gate::authorize('create', Expense::class);
 
         $batches = Batch::query()
+            ->where('status', 'active')
             ->orderBy('start_date', 'desc')
             ->get();
 
@@ -33,13 +35,44 @@ class ExpenseController extends Controller
         Gate::authorize('create', Expense::class);
 
         $data = $request->validated();
+
+        // If a batch is linked, ensure it's active
+        if (!empty($data['poultry_batch_id'])) {
+            $batch = Batch::findOrFail($data['poultry_batch_id']);
+            if ($batch->status !== 'active') {
+                return redirect()->back()->with('error', 'Cannot add expenses to a closed or completed batch.');
+            }
+        } else {
+            $batch = null;
+        }
+
         $data['recorded_by_id'] = auth()->id();
 
-        $expense = Expense::create($data);
-        $expense->batch?->updateCachedMetrics();
+        DB::transaction(function () use ($data, $batch) {
+            $expense = Expense::create($data);
 
-        return redirect()->route('poultry.batches.show', $expense->batch)
-            ->with('success', 'Expense recorded.');
+            // If a batch is linked, update its state (add cost)
+            if ($batch) {
+                $changes = [
+                    'count' => 0,
+                    'weight' => 0,
+                    'cost' => $expense->amount,
+                ];
+                $batch->updateState($changes, 'expense');
+                $batch->updateCachedMetrics(); // optional for backward compatibility
+            }
+
+            return $expense;
+        });
+
+        // Redirect based on whether there's a batch
+        if ($batch) {
+            return redirect()->route('poultry.batches.show', $batch)
+                ->with('success', 'Expense recorded.');
+        } else {
+            return redirect()->route('poultry.forms.hub')
+                ->with('success', 'General expense recorded.');
+        }
     }
 
     public function edit(Expense $expense)
@@ -52,8 +85,29 @@ class ExpenseController extends Controller
     {
         Gate::authorize('update', $expense);
 
-        $expense->update($request->validated());
-        $expense->batch?->updateCachedMetrics();
+        $data = $request->validated();
+        $oldAmount = $expense->amount;
+        $newAmount = $data['amount'];
+
+        DB::transaction(function () use ($expense, $data, $oldAmount, $newAmount) {
+            // Update the expense record
+            $expense->update($data);
+
+            // If the batch is linked, adjust the state by the difference
+            if ($expense->batch) {
+                $batch = $expense->batch;
+                $diff = $newAmount - $oldAmount;
+                if ($diff != 0) {
+                    $changes = [
+                        'count' => 0,
+                        'weight' => 0,
+                        'cost' => $diff,
+                    ];
+                    $batch->updateState($changes, 'expense');
+                    $batch->updateCachedMetrics();
+                }
+            }
+        });
 
         return redirect()->route('poultry.batches.show', $expense->batch)
             ->with('success', 'Expense updated.');
@@ -63,9 +117,22 @@ class ExpenseController extends Controller
     {
         Gate::authorize('delete', $expense);
 
-        $batch = $expense->batch;
-        $expense->delete();
-        $batch?->updateCachedMetrics();
+        DB::transaction(function () use ($expense) {
+            $batch = $expense->batch;
+
+            // Reverse the cost effect
+            if ($batch) {
+                $changes = [
+                    'count' => 0,
+                    'weight' => 0,
+                    'cost' => -$expense->amount,
+                ];
+                $batch->updateState($changes, 'expense');
+                $batch->updateCachedMetrics();
+            }
+
+            $expense->delete();
+        });
 
         return redirect()->back()->with('success', 'Expense deleted.');
     }
