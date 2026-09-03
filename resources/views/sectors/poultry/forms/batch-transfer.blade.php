@@ -6,7 +6,7 @@
 <div class="md:flex md:items-center md:justify-between mb-6">
     <div>
         <h1 class="text-2xl font-bold text-gray-900">Batch Transfer</h1>
-        <p class="text-sm text-gray-600">Move birds from one active batch to another with a recorded note</p>
+        <p class="text-sm text-gray-600">Move birds from one active batch to another with manual weight entry</p>
     </div>
     <div class="mt-4 flex md:mt-0 md:ml-4">
         <a href="{{ route('poultry.forms.hub') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
@@ -29,7 +29,7 @@
                         <option value="">Select source batch</option>
                         @foreach($batches as $batch)
                             <option value="{{ $batch->id }}" {{ old('from_batch') == $batch->id ? 'selected' : '' }}>
-                                {{ $batch->batch_id }} - {{ $batch->name }} ({{ $batch->remaining_flock }} birds)
+                                {{ $batch->batch_id }} - {{ $batch->name }} ({{ $batch->current_count }} birds, avg: {{ number_format($batch->current_average_weight, 3) }} kg)
                             </option>
                         @endforeach
                     </select>
@@ -42,7 +42,7 @@
                         <option value="">Select destination batch</option>
                         @foreach($batches as $batch)
                             <option value="{{ $batch->id }}" {{ old('to_batch') == $batch->id ? 'selected' : '' }}>
-                                {{ $batch->batch_id }} - {{ $batch->name }} ({{ $batch->remaining_flock }} birds)
+                                {{ $batch->batch_id }} - {{ $batch->name }} ({{ $batch->current_count }} birds, avg: {{ number_format($batch->current_average_weight, 3) }} kg)
                             </option>
                         @endforeach
                     </select>
@@ -54,6 +54,14 @@
                 <label for="birds_to_transfer" class="block text-sm font-medium text-gray-700">Birds to Transfer *</label>
                 <input type="number" min="1" name="birds_to_transfer" id="birds_to_transfer" value="{{ old('birds_to_transfer') }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 50">
                 @error('birds_to_transfer') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            </div>
+
+            <!-- NEW: Manual Weight Input -->
+            <div>
+                <label for="manual_weight" class="block text-sm font-medium text-gray-700">Average Weight of Transferred Birds (kg) *</label>
+                <input type="number" step="0.001" min="0.001" name="manual_weight" id="manual_weight" value="{{ old('manual_weight') }}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" placeholder="e.g. 3.5" required>
+                <p class="mt-1 text-xs text-gray-500">Enter the actual average weight of the birds being transferred (e.g., fast-growing birds are heavier than batch average).</p>
+                @error('manual_weight') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 
             <div>

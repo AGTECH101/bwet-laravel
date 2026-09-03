@@ -36,7 +36,6 @@ class ExpenseController extends Controller
 
         $data = $request->validated();
 
-        // If a batch is linked, ensure it's active
         if (!empty($data['poultry_batch_id'])) {
             $batch = Batch::findOrFail($data['poultry_batch_id']);
             if ($batch->status !== 'active') {
@@ -51,21 +50,17 @@ class ExpenseController extends Controller
         DB::transaction(function () use ($data, $batch) {
             $expense = Expense::create($data);
 
-            // If a batch is linked, update its state (add cost)
             if ($batch) {
-                $changes = [
-                    'count' => 0,
-                    'weight' => 0,
-                    'cost' => $expense->amount,
-                ];
-                $batch->updateState($changes, 'expense');
-                $batch->updateCachedMetrics(); // optional for backward compatibility
+                $batch->current_cost += $expense->amount;
+                $batch->current_average_cost = $batch->current_count > 0
+                    ? $batch->current_cost / $batch->current_count
+                    : 0;
+                $batch->total_expenses += $expense->amount;
+                $batch->save();
+                $batch->updateCachedMetrics();
             }
-
-            return $expense;
         });
 
-        // Redirect based on whether there's a batch
         if ($batch) {
             return redirect()->route('poultry.batches.show', $batch)
                 ->with('success', 'Expense recorded.');
@@ -90,22 +85,28 @@ class ExpenseController extends Controller
         $newAmount = $data['amount'];
 
         DB::transaction(function () use ($expense, $data, $oldAmount, $newAmount) {
-            // Update the expense record
+            $batch = $expense->batch;
+
+            if ($batch) {
+                // Reverse old amount
+                $batch->current_cost -= $oldAmount;
+                $batch->total_expenses -= $oldAmount;
+                $batch->current_average_cost = $batch->current_count > 0
+                    ? $batch->current_cost / $batch->current_count
+                    : 0;
+            }
+
             $expense->update($data);
 
-            // If the batch is linked, adjust the state by the difference
-            if ($expense->batch) {
-                $batch = $expense->batch;
-                $diff = $newAmount - $oldAmount;
-                if ($diff != 0) {
-                    $changes = [
-                        'count' => 0,
-                        'weight' => 0,
-                        'cost' => $diff,
-                    ];
-                    $batch->updateState($changes, 'expense');
-                    $batch->updateCachedMetrics();
-                }
+            if ($batch) {
+                // Apply new amount
+                $batch->current_cost += $newAmount;
+                $batch->total_expenses += $newAmount;
+                $batch->current_average_cost = $batch->current_count > 0
+                    ? $batch->current_cost / $batch->current_count
+                    : 0;
+                $batch->save();
+                $batch->updateCachedMetrics();
             }
         });
 
@@ -120,14 +121,13 @@ class ExpenseController extends Controller
         DB::transaction(function () use ($expense) {
             $batch = $expense->batch;
 
-            // Reverse the cost effect
             if ($batch) {
-                $changes = [
-                    'count' => 0,
-                    'weight' => 0,
-                    'cost' => -$expense->amount,
-                ];
-                $batch->updateState($changes, 'expense');
+                $batch->current_cost -= $expense->amount;
+                $batch->total_expenses -= $expense->amount;
+                $batch->current_average_cost = $batch->current_count > 0
+                    ? $batch->current_cost / $batch->current_count
+                    : 0;
+                $batch->save();
                 $batch->updateCachedMetrics();
             }
 

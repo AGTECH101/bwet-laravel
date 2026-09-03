@@ -112,7 +112,7 @@
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center">
                                 <div class="w-24 bg-gray-200 rounded-full h-2 mr-3">
-                                    <div class="bg-primary-600 h-2 rounded-full" style="width: {{ ($batch->remaining_flock / max($batch->starting_flock, 1)) * 100 }}%"></div>
+                                    <div class="bg-primary-600 h-2 rounded-full" style="width: {{ min(($batch->remaining_flock / max($batch->starting_flock, 1)) * 100, 100) }}%"></div>
                                 </div>
                                 <div class="text-sm text-gray-900">{{ $batch->remaining_flock }}/{{ $batch->starting_flock }}</div>
                             </div>

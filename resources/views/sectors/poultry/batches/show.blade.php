@@ -36,7 +36,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow p-4 border-l-4 border-blue-500">
             <h3 class="text-sm font-medium text-blue-700"><i class="fas fa-hourglass-half mr-1"></i>Age</h3>
-            <p class="text-2xl font-bold text-blue-900 mt-2">{{ max(0, (int) $batch->age_days) }} <span class="text-sm">days</span></p>
+            <p class="text-2xl font-bold text-blue-900 mt-2">{{ $batch->age_days }} <span class="text-sm">days</span></p>
         </div>
         @if(auth()->user()->role === 'admin')
         <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg shadow p-4 border-l-4 border-emerald-500">
@@ -67,7 +67,7 @@
                 <div class="flex justify-between"><span class="text-sm text-gray-600">Starting</span><span class="text-lg font-bold">{{ $batch->starting_flock }}</span></div>
                 <div class="pt-3 border-t border-gray-100">
                     <div class="flex justify-between text-sm">
-                        <span class="text-red-600">Mortality: {{ $batch->total_mortality }}</span>
+                        <span class="text-red-600">Mortality: {{ number_format($batch->total_mortality, 1) }}</span>
                         <span class="text-yellow-600">Culls: {{ $batch->total_culls }}</span>
                         <span class="text-green-600">Slaughter: {{ $batch->total_slaughter }}</span>
                     </div>
@@ -82,6 +82,32 @@
                 <div class="flex justify-between"><span class="text-sm text-gray-600">cFCR</span><span class="text-lg font-bold {{ $batch->current_cfcr < 1.8 ? 'text-green-600' : ($batch->current_cfcr < 2.0 ? 'text-yellow-600' : 'text-red-600') }}">{{ format_fcr($batch->current_cfcr) }}</span></div>
             </div>
         </div>
+    </div>
+
+    <!-- Mortality Overview (New) -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Mortality Overview</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                <p class="text-sm text-gray-500">Total Mortality</p>
+                <p class="text-xl font-bold text-red-600">{{ number_format($batch->total_mortality, 1) }}</p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                <p class="text-sm text-gray-500">Mortality Rate</p>
+                <p class="text-xl font-bold {{ $batch->mortality_rate > 7 ? 'text-red-600' : 'text-yellow-600' }}">
+                    {{ number_format($batch->mortality_rate, 1) }}%
+                </p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                <p class="text-sm text-gray-500">Pen Mortality</p>
+                <p class="text-xl font-bold text-orange-600">{{ number_format($batch->pen_mortality, 1) }}</p>
+            </div>
+        </div>
+        <p class="mt-3 text-xs text-gray-500">
+            <span class="text-blue-600">Historical</span> = deaths that traveled with transferred birds &bull;
+            <span class="text-orange-600">pen</span> = deaths that occurred in this pen &bull;
+            <span class="text-red-600">Total</span> = Historical + pen
+        </p>
     </div>
 
     <!-- Slaughter Triggers -->

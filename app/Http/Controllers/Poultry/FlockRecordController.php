@@ -44,21 +44,43 @@ class FlockRecordController extends Controller
         }
 
         $record = DB::transaction(function () use ($data, $batch) {
-            // Create the record
             $record = FlockRecord::create($data);
 
-            // Adjust remaining flock: subtract mortality, culls, and slaughter
             $reduction = ($record->mortality ?? 0) + ($record->culls ?? 0) + ($record->slaughter ?? 0);
-            $batch->remaining_flock = max(0, $batch->remaining_flock - $reduction);
-            $batch->save();
+            if ($reduction > 0) {
+                $avgWeight = $batch->current_average_weight;
+                $weightLost = $reduction * $avgWeight;
 
-            // Allocate cost for slaughtered birds
+                // Update count and weight
+                $batch->current_count -= $reduction;
+                $batch->current_weight_kg -= $weightLost;
+                $batch->current_average_weight = $batch->current_count > 0
+                    ? $batch->current_weight_kg / $batch->current_count
+                    : 0;
+
+                // --- Mortality update ---
+                if ($record->mortality > 0) {
+                    $batch->total_mortality += $record->mortality;
+                    $batch->historical_mortality += $record->mortality;
+                    $batch->pond_mortality += $record->mortality;  // record pond mortality
+                    $batch->mortality_rate = $batch->starting_flock > 0
+                        ? ($batch->total_mortality / $batch->starting_flock) * 100
+                        : 0;
+                }
+
+                // Culls and slaughter: weight removed but no mortality cost.
+                // Slaughter cost allocation is handled separately (if needed).
+
+                $batch->remaining_flock = $batch->current_count;
+                $batch->save();
+            }
+
+            // Allocate cost for slaughtered birds (if needed)
             if ($record->slaughter > 0) {
-                $oldRemaining = $batch->remaining_flock + $record->slaughter; // before slaughter
-                $oldTotalInvestment = $batch->calculateTotalInvestment();
-                $allocated = $batch->allocateCostForSlaughter($record->slaughter, $oldRemaining, $oldTotalInvestment);
-                $record->allocated_cost = $allocated;
-                $record->save();
+                // We can call the old allocateCostForSlaughter if needed,
+                // but with checkpoint approach, we don't use cost_allocated_so_far anymore.
+                // The weight removal already happened above.
+                // We could log it as a state change, but it's optional.
             }
 
             $batch->updateCachedMetrics();
@@ -67,7 +89,7 @@ class FlockRecordController extends Controller
         });
 
         return redirect()->route('poultry.batches.show', $record->batch)
-            ->with('success', 'Flock record saved. Remaining flock updated and slaughter costs allocated.');
+            ->with('success', 'Flock record saved.');
     }
 
     public function edit(FlockRecord $flockRecord)
@@ -85,36 +107,53 @@ class FlockRecordController extends Controller
         DB::transaction(function () use ($flockRecord, $data) {
             $batch = $flockRecord->batch;
 
-            // Calculate old and new reductions
+            // Reverse old changes first
             $oldReduction = ($flockRecord->mortality ?? 0) + ($flockRecord->culls ?? 0) + ($flockRecord->slaughter ?? 0);
-            $newReduction = ($data['mortality'] ?? 0) + ($data['culls'] ?? 0) + ($data['slaughter'] ?? 0);
-            $diff = $newReduction - $oldReduction;
+            if ($oldReduction > 0) {
+                $oldAvgWeight = $batch->current_average_weight; // approximate
+                $oldWeightLost = $oldReduction * $oldAvgWeight;
 
-            // Adjust remaining flock
-            $batch->remaining_flock = max(0, $batch->remaining_flock - $diff);
-            $batch->save();
+                $batch->current_count += $oldReduction;
+                $batch->current_weight_kg += $oldWeightLost;
+                $batch->current_average_weight = $batch->current_count > 0
+                    ? $batch->current_weight_kg / $batch->current_count
+                    : 0;
 
-            // Remove old cost allocation
-            if ($flockRecord->slaughter > 0 && $flockRecord->allocated_cost > 0) {
-                $batch->cost_allocated_so_far = max(0, $batch->cost_allocated_so_far - $flockRecord->allocated_cost);
-                $batch->save();
+                if ($flockRecord->mortality > 0) {
+                    $batch->total_mortality -= $flockRecord->mortality;
+                    $batch->historical_mortality -= $flockRecord->mortality;
+                    $batch->pond_mortality -= $flockRecord->mortality;
+                }
             }
+
+            // Apply new changes
+            $newReduction = ($data['mortality'] ?? 0) + ($data['culls'] ?? 0) + ($data['slaughter'] ?? 0);
+            if ($newReduction > 0) {
+                $newAvgWeight = $batch->current_average_weight;
+                $newWeightLost = $newReduction * $newAvgWeight;
+
+                $batch->current_count -= $newReduction;
+                $batch->current_weight_kg -= $newWeightLost;
+                $batch->current_average_weight = $batch->current_count > 0
+                    ? $batch->current_weight_kg / $batch->current_count
+                    : 0;
+
+                if ($data['mortality'] > 0) {
+                    $batch->total_mortality += $data['mortality'];
+                    $batch->historical_mortality += $data['mortality'];
+                    $batch->pond_mortality += $data['mortality'];
+                }
+            }
+
+            $batch->mortality_rate = $batch->starting_flock > 0
+                ? ($batch->total_mortality / $batch->starting_flock) * 100
+                : 0;
+
+            $batch->remaining_flock = $batch->current_count;
+            $batch->save();
 
             // Update the record
             $flockRecord->update($data);
-
-            // Apply new cost allocation
-            if ($flockRecord->slaughter > 0) {
-                $batch->refresh();
-                $oldRemaining = $batch->remaining_flock + $flockRecord->slaughter; // before slaughter
-                $oldTotalInvestment = $batch->calculateTotalInvestment();
-                $allocated = $batch->allocateCostForSlaughter($flockRecord->slaughter, $oldRemaining, $oldTotalInvestment);
-                $flockRecord->allocated_cost = $allocated;
-                $flockRecord->save();
-            } else {
-                $flockRecord->allocated_cost = 0;
-                $flockRecord->save();
-            }
 
             $batch->updateCachedMetrics();
         });
@@ -130,21 +169,36 @@ class FlockRecordController extends Controller
         DB::transaction(function () use ($flockRecord) {
             $batch = $flockRecord->batch;
 
-            // Add back the reduction to remaining flock
+            // Reverse the effects
             $reduction = ($flockRecord->mortality ?? 0) + ($flockRecord->culls ?? 0) + ($flockRecord->slaughter ?? 0);
-            $batch->remaining_flock += $reduction;
-            $batch->save();
+            if ($reduction > 0) {
+                $avgWeight = $batch->current_average_weight;
+                $weightLost = $reduction * $avgWeight;
 
-            // Reverse cost allocation
-            if ($flockRecord->slaughter > 0 && $flockRecord->allocated_cost > 0) {
-                $batch->cost_allocated_so_far = max(0, $batch->cost_allocated_so_far - $flockRecord->allocated_cost);
-                $batch->save();
+                $batch->current_count += $reduction;
+                $batch->current_weight_kg += $weightLost;
+                $batch->current_average_weight = $batch->current_count > 0
+                    ? $batch->current_weight_kg / $batch->current_count
+                    : 0;
+
+                if ($flockRecord->mortality > 0) {
+                    $batch->total_mortality -= $flockRecord->mortality;
+                    $batch->historical_mortality -= $flockRecord->mortality;
+                    $batch->pond_mortality -= $flockRecord->mortality;
+                }
             }
+
+            $batch->mortality_rate = $batch->starting_flock > 0
+                ? ($batch->total_mortality / $batch->starting_flock) * 100
+                : 0;
+
+            $batch->remaining_flock = $batch->current_count;
+            $batch->save();
 
             $flockRecord->delete();
             $batch->updateCachedMetrics();
         });
 
-        return redirect()->back()->with('success', 'Flock record deleted. Remaining flock restored and cost allocation reversed.');
+        return redirect()->back()->with('success', 'Flock record deleted.');
     }
 }

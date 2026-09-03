@@ -214,6 +214,17 @@ class RealisticFarmSeeder extends Seeder
             $batch->save();
         }
 
+        // After creating flock records for each batch, set mortality fields
+        foreach ($batches as $batch) {
+            // Recalculate total_mortality from flock records
+            $totalMort = $batch->flockRecords()->sum('mortality') ?? 0;
+            $batch->total_mortality = $totalMort;
+            $batch->historical_mortality = $totalMort;  // all deaths are historical initially
+            $batch->pond_mortality = $totalMort;        // all deaths happened in this pond initially
+            $batch->mortality_rate = $batch->starting_flock > 0 ? ($totalMort / $batch->starting_flock) * 100 : 0;
+            $batch->save();
+        }
+
         // ─── 3. CREATE WEIGHT RECORDS ──────────────────────────────
         foreach ($batches as $batch) {
             for ($j = 1; $j <= 5; $j++) {

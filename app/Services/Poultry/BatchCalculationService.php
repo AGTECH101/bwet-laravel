@@ -148,18 +148,21 @@ class BatchCalculationService
         return $allocated;
     }
 
+    /**
+     * Update cached metrics WITHOUT overwriting state fields.
+     * Only derived fields: FCR, profit, selling prices, mortality rate.
+     */
     public static function updateCachedMetrics(Batch $batch)
     {
         DB::transaction(function () use ($batch) {
             // Age
             $batch->current_age_days = max(0, Carbon::today()->diffInDays($batch->start_date));
 
-            // Flock totals (DO NOT recalculate remaining_flock – it's managed manually via transfers/flock records)
+            // Flock totals – DO NOT recalc total_mortality (it's cumulative and split via transfers)
             $totals = $batch->flockRecords()
-                ->selectRaw('SUM(mortality) as total_mort, SUM(culls) as total_culls, SUM(slaughter) as total_slaughter')
+                ->selectRaw('SUM(culls) as total_culls, SUM(slaughter) as total_slaughter')
                 ->first();
 
-            $batch->total_mortality = $totals->total_mort ?? 0;
             $batch->total_culls = $totals->total_culls ?? 0;
             $batch->total_slaughter = $totals->total_slaughter ?? 0;
 
@@ -195,17 +198,24 @@ class BatchCalculationService
             $batch->stop_loss_used_percent = $stopLossAmount > 0 ? min(100, ($retracement / $stopLossAmount) * 100) : 0;
 
             // Profit margin used
-            $costPerBird = self::getCostPerBird($batch);
-            $sellingPricePerBird = self::getSellingPricePerBird($batch);
+            $costPerBird = $batch->getCostPerBird();
+            $sellingPricePerBird = $batch->getSellingPricePerBird();
             $batch->profit_margin_used = $costPerBird > 0 ? (($sellingPricePerBird - $costPerBird) / $costPerBird) * 100 : 0;
 
             // Update selling price fields
-            $batch->selling_price_per_kg = self::getCalculatedSellingPricePerKg($batch);
+            $batch->selling_price_per_kg = $batch->getCalculatedSellingPricePerKg();
             $batch->selling_price_per_carton = $batch->selling_price_per_kg * 10;
+
+            // Recalculate mortality rate (uses the cumulative total_mortality)
+            $batch->mortality_rate = $batch->starting_flock > 0
+                ? ($batch->total_mortality / $batch->starting_flock) * 100
+                : 0;
 
             $batch->save();
         });
     }
+
+    // ─── Private helper methods ──────────────────────────────
 
     private static function calculateTotalWeightGain(Batch $batch): float
     {
@@ -217,7 +227,7 @@ class BatchCalculationService
 
         for ($i = 0; $i < $records->count() - 1; $i++) {
             $current = $records[$i];
-            $next = $records[$i+1];
+            $next = $records[$i + 1];
             $daysBetween = $current->date->diffInDays($next->date);
             if ($daysBetween > 0) {
                 $adg = ($next->average_weight - $current->average_weight) / $daysBetween;

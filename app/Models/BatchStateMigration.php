@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Models\Poultry\Batch;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 class BatchStateMigration extends Model
@@ -17,6 +16,9 @@ class BatchStateMigration extends Model
         'count_moved',
         'weight_moved',
         'cost_moved',
+        'mortality_moved',
+        'feed_moved',
+        'weight_gain_moved',
         'source_state_before',
         'destination_state_before',
         'created_by_id',
@@ -28,6 +30,9 @@ class BatchStateMigration extends Model
         'count_moved' => 'integer',
         'weight_moved' => 'decimal:3',
         'cost_moved' => 'decimal:2',
+        'mortality_moved' => 'decimal:3',
+        'feed_moved' => 'decimal:3',
+        'weight_gain_moved' => 'decimal:3',
     ];
 
     public function sourceBatch()
