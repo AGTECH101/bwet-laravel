@@ -47,6 +47,10 @@ class FeedRecordController extends Controller
             return redirect()->back()->with('error', 'Cannot add records to a closed or completed batch.');
         }
 
+        if ($batch->current_count <= 0) {
+            return redirect()->back()->with('error', 'Cannot add feed to an empty batch (0 birds).');
+        }
+
         $item = InventoryItem::findOrFail($data['inventory_item_id']);
         $data['feed_cost_per_kg'] = $item->cost_per_unit;
         $data['total_feed_cost'] = $data['feed_used'] * $item->cost_per_unit;

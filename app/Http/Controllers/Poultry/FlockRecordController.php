@@ -43,6 +43,10 @@ class FlockRecordController extends Controller
             return redirect()->back()->with('error', 'Cannot add records to a closed or completed batch.');
         }
 
+        if ($batch->current_count <= 0) {
+            return redirect()->back()->with('error', 'Cannot add records to an empty batch (0 birds).');
+        }
+
         $record = DB::transaction(function () use ($data, $batch) {
             $record = FlockRecord::create($data);
 

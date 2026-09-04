@@ -49,7 +49,7 @@
 
             <div>
                 <label for="starting_flock" class="block text-sm font-medium text-gray-700">Starting Flock Size <span class="text-red-500">*</span></label>
-                <input type="number" name="starting_flock" id="starting_flock" value="{{ old('starting_flock') }}" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" placeholder="Number of birds">
+                <input type="number" name="starting_flock" id="starting_flock" value="{{ old('starting_flock') }}" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" placeholder="Number of birds">
                 @error('starting_flock') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
 

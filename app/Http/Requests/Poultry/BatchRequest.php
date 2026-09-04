@@ -8,7 +8,7 @@ class BatchRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // handled by policies
+        return true;
     }
 
     public function rules(): array
@@ -18,7 +18,7 @@ class BatchRequest extends FormRequest
             'name' => 'required|string|max:100',
             'hatchery' => 'nullable|string|max:100',
             'start_date' => 'required|date',
-            'starting_flock' => 'required|integer|min:1',
+            'starting_flock' => 'required|integer|min:0', // ← changed from 1 to 0
             'phase' => 'required|in:brooding,batch',
             'pen_id' => 'nullable|exists:pens,id',
             'initial_chicken_cost' => 'nullable|numeric|min:0',

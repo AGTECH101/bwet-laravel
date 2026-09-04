@@ -44,6 +44,10 @@ class WeightRecordController extends Controller
             return redirect()->back()->with('error', 'Cannot add records to a closed or completed batch.');
         }
 
+        if ($batch->current_count <= 0) {
+            return redirect()->back()->with('error', 'Cannot add weight records to an empty batch (0 birds).');
+        }
+
         $weights = $data['individual_weights'] ?? [];
 
         if (is_array($weights) && count($weights) >= 2) {

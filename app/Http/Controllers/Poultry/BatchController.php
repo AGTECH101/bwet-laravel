@@ -83,23 +83,24 @@ class BatchController extends Controller
         Gate::authorize('create', Batch::class);
 
         $validated = $request->validated();
-
-        // Set remaining flock equal to starting flock
         $validated['remaining_flock'] = $validated['starting_flock'];
+        $validated['current_count'] = $validated['starting_flock'];
 
-        // Auto-generate batch_id if not provided
         if (empty($validated['batch_id'])) {
-            // We'll generate after save
+            // Will be generated after save
         }
 
         $batch = DB::transaction(function () use ($validated, $request) {
             $batch = Batch::create([
-                'batch_id' => $validated['batch_id'] ?? null, // will be generated later
+                'batch_id' => $validated['batch_id'] ?? null,
                 'name' => $validated['name'],
                 'hatchery' => $validated['hatchery'] ?? null,
                 'start_date' => $validated['start_date'],
                 'starting_flock' => $validated['starting_flock'],
                 'remaining_flock' => $validated['starting_flock'],
+                'current_count' => $validated['starting_flock'],
+                'current_weight_kg' => 0,
+                'current_cost' => $validated['initial_chicken_cost'] ?? 0,
                 'phase' => $validated['phase'],
                 'initial_chicken_cost' => $validated['initial_chicken_cost'] ?? 0,
                 'sector_id' => sector_id('poultry'),
@@ -107,31 +108,27 @@ class BatchController extends Controller
                 'status' => 'active',
             ]);
 
-            // Auto-generate batch_id if not provided
             if (empty($batch->batch_id)) {
                 $batch->batch_id = 'B' . str_pad($batch->id, 4, '0', STR_PAD_LEFT);
                 $batch->save();
             }
 
-            // Assign pen if phase is batch and pen exists
-            if ($batch->phase === 'batch') {
+            // Assign pen only if starting_flock > 0 and phase is batch
+            if ($batch->phase === 'batch' && $batch->starting_flock > 0) {
                 $pen = Pen::available()->first();
                 if ($pen) {
-                    // Check capacity
-                    if ($pen->capacity < $batch->starting_flock) {
-                        session()->flash('warning', 'Pen capacity (' . $pen->capacity . ') is less than starting flock (' . $batch->starting_flock . '). Please assign a larger pen manually.');
-                        // Still proceed without assigning the pen
-                    } else {
+                    if ($pen->capacity >= $batch->starting_flock) {
                         $pen->occupy($batch);
                         $batch->pen_id = $pen->id;
                         $batch->save();
+                    } else {
+                        session()->flash('warning', 'Pen capacity (' . $pen->capacity . ') is less than starting flock (' . $batch->starting_flock . ').');
                     }
                 } else {
                     session()->flash('warning', 'No available pen for batch phase. Batch created without pen assignment.');
                 }
             }
 
-            // Update calculated selling price (based on profit margin)
             $batch->updateCachedMetrics();
 
             return $batch;
