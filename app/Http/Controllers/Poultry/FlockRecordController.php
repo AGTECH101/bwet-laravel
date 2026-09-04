@@ -43,7 +43,8 @@ class FlockRecordController extends Controller
             return redirect()->back()->with('error', 'Cannot add records to a closed or completed batch.');
         }
 
-        if ($batch->current_count <= 0) {
+        // If no birds, block
+        if ($batch->current_count <= 0 && ($data['mortality'] > 0 || $data['culls'] > 0 || $data['slaughter'] > 0)) {
             return redirect()->back()->with('error', 'Cannot add records to an empty batch (0 birds).');
         }
 
@@ -52,8 +53,14 @@ class FlockRecordController extends Controller
 
             $reduction = ($record->mortality ?? 0) + ($record->culls ?? 0) + ($record->slaughter ?? 0);
             if ($reduction > 0) {
-                $avgWeight = $batch->current_average_weight;
-                $weightLost = $reduction * $avgWeight;
+                // Determine weight per bird for reduction
+                if ($record->slaughter > 0 && $record->slaughter_avg_weight) {
+                    $weightPerBird = (float) $record->slaughter_avg_weight;
+                } else {
+                    $weightPerBird = $batch->current_average_weight;
+                }
+
+                $weightLost = $reduction * $weightPerBird;
 
                 // Update count and weight
                 $batch->current_count -= $reduction;
@@ -62,29 +69,22 @@ class FlockRecordController extends Controller
                     ? $batch->current_weight_kg / $batch->current_count
                     : 0;
 
-                // --- Mortality update ---
+                // Mortality update (if mortality > 0)
                 if ($record->mortality > 0) {
                     $batch->total_mortality += $record->mortality;
                     $batch->historical_mortality += $record->mortality;
-                    $batch->pond_mortality += $record->mortality;  // record pond mortality
+                    $batch->pond_mortality += $record->mortality;
                     $batch->mortality_rate = $batch->starting_flock > 0
                         ? ($batch->total_mortality / $batch->starting_flock) * 100
                         : 0;
                 }
 
-                // Culls and slaughter: weight removed but no mortality cost.
-                // Slaughter cost allocation is handled separately (if needed).
+                // For slaughter, cost allocation is separate (if needed)
+                // We can optionally call allocateCostForSlaughter here,
+                // but the checkpoint approach doesn't need it (cost is unaffected).
 
                 $batch->remaining_flock = $batch->current_count;
                 $batch->save();
-            }
-
-            // Allocate cost for slaughtered birds (if needed)
-            if ($record->slaughter > 0) {
-                // We can call the old allocateCostForSlaughter if needed,
-                // but with checkpoint approach, we don't use cost_allocated_so_far anymore.
-                // The weight removal already happened above.
-                // We could log it as a state change, but it's optional.
             }
 
             $batch->updateCachedMetrics();
@@ -114,8 +114,8 @@ class FlockRecordController extends Controller
             // Reverse old changes first
             $oldReduction = ($flockRecord->mortality ?? 0) + ($flockRecord->culls ?? 0) + ($flockRecord->slaughter ?? 0);
             if ($oldReduction > 0) {
-                $oldAvgWeight = $batch->current_average_weight; // approximate
-                $oldWeightLost = $oldReduction * $oldAvgWeight;
+                $oldWeightPerBird = $flockRecord->getSlaughterWeightUsed();
+                $oldWeightLost = $oldReduction * $oldWeightPerBird;
 
                 $batch->current_count += $oldReduction;
                 $batch->current_weight_kg += $oldWeightLost;
@@ -133,8 +133,14 @@ class FlockRecordController extends Controller
             // Apply new changes
             $newReduction = ($data['mortality'] ?? 0) + ($data['culls'] ?? 0) + ($data['slaughter'] ?? 0);
             if ($newReduction > 0) {
-                $newAvgWeight = $batch->current_average_weight;
-                $newWeightLost = $newReduction * $newAvgWeight;
+                // Determine weight per bird for the new reduction
+                if ($data['slaughter'] > 0 && isset($data['slaughter_avg_weight']) && $data['slaughter_avg_weight'] > 0) {
+                    $newWeightPerBird = (float) $data['slaughter_avg_weight'];
+                } else {
+                    $newWeightPerBird = $batch->current_average_weight;
+                }
+
+                $newWeightLost = $newReduction * $newWeightPerBird;
 
                 $batch->current_count -= $newReduction;
                 $batch->current_weight_kg -= $newWeightLost;
@@ -173,11 +179,10 @@ class FlockRecordController extends Controller
         DB::transaction(function () use ($flockRecord) {
             $batch = $flockRecord->batch;
 
-            // Reverse the effects
             $reduction = ($flockRecord->mortality ?? 0) + ($flockRecord->culls ?? 0) + ($flockRecord->slaughter ?? 0);
             if ($reduction > 0) {
-                $avgWeight = $batch->current_average_weight;
-                $weightLost = $reduction * $avgWeight;
+                $weightPerBird = $flockRecord->getSlaughterWeightUsed();
+                $weightLost = $reduction * $weightPerBird;
 
                 $batch->current_count += $reduction;
                 $batch->current_weight_kg += $weightLost;
