@@ -54,7 +54,7 @@
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-600">Stock Level</span>
                     <span class="font-bold">
-                        {{ $inventory->minimum_quantity > 0 ? min(number_format(($inventory->quantity_in_stock / $inventory->minimum_quantity) * 100,2), 100) : 0 }}%
+                        {{ $inventory->minimum_quantity > 0 ? number_format(min(($inventory->quantity_in_stock / $inventory->minimum_quantity) * 100, 100), 2) : 0 }}%
                     </span>
                 </div>
                 <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
