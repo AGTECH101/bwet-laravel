@@ -1,6 +1,6 @@
 # 🧮 BWET Farms – Poultry Module: Formulas, Logic & Implementation Blueprint
 
-*Version 2.0 – September 2026*  
+*Version 3.0 – September 2026*  
 *This document is the authoritative reference for all calculations, business rules, and data flows in the poultry module.*
 
 ---
@@ -8,21 +8,24 @@
 ## 📖 Table of Contents
 
 1. [Core Data Model](#core-data-model)
-2. [Batch State (Checkpoint Approach)](#batch-state)
-3. [State Update Operations](#state-update-operations)
-4. [Batch Transfer (Grading) with Split Logic](#batch-transfer)
-5. [Cost & Financial Metrics](#cost--financial-metrics)
-6. [Slaughter & Cull Cost Allocation](#slaughter--cull-cost-allocation)
-7. [Feed Conversion Ratio (FCR)](#feed-conversion-ratio-fcr)
-8. [Weight Records & Coefficient of Variation (CV)](#weight-records--coefficient-of-variation-cv)
-9. [Price Calculator](#price-calculator)
-10. [Inventory & Consumption](#inventory--consumption)
-11. [Batch Age (Dynamic)](#batch-age-dynamic)
-12. [System Variables](#system-variables)
-13. [Slaughter Triggers (Automated Alerts)](#slaughter-triggers-automated-alerts)
-14. [Pen Assignment](#pen-assignment)
-15. [Migration Log (Audit Trail)](#migration-log-audit-trail)
-16. [Flowchart Summary](#flowchart-summary)
+2. [Batch State Model (Recalculation Approach)](#batch-state-model)
+3. [Record Operations & Recalculation Triggers](#record-operations)
+4. [Mortality Split Logic (Critical)](#mortality-split-logic)
+5. [Batch Transfer (Grading) with Split Logic](#batch-transfer)
+6. [Cost & Financial Metrics](#cost--financial-metrics)
+7. [Mortality vs COP Behavior](#mortality-vs-cop-behavior)
+8. [Feed Conversion Ratio (FCR)](#feed-conversion-ratio-fcr)
+9. [Weight Records & Coefficient of Variation (CV)](#weight-records--cv)
+10. [Price Calculator](#price-calculator)
+11. [Inventory & Consumption](#inventory--consumption)
+12. [Control Panel (Admin-Only Data Correction)](#control-panel)
+13. [Batch Age (Dynamic)](#batch-age-dynamic)
+14. [System Variables](#system-variables)
+15. [Slaughter Triggers (Automated Alerts)](#slaughter-triggers)
+16. [Pen Assignment](#pen-assignment)
+17. [Migration Log (Audit Trail)](#migration-log)
+18. [Flowchart Summary](#flowchart-summary)
+19. [Deployment & Recovery](#deployment--recovery)
 
 ---
 
@@ -30,306 +33,321 @@
 
 | Table | Purpose |
 |-------|---------|
-| `poultry_batches` | Stores **current state** (checkpoint) plus historical totals for mortality, feed, weight gain, and FCR. |
-| `batch_state_migrations` | Audit trail of **every state change** (transfers, feed, expenses, mortality, etc.) with before/after snapshots. |
-| `flock_records` | Daily mortality, culls, and slaughter events (historical). |
-| `weight_records` | Individual bird weights with CV, mean, and status. |
+| `poultry_batches` | Stores the **current derived state** of a batch (count, weight, cost, mortality, FCR) + base data (start date, starting flock, initial cost). |
+| `batch_state_migrations` | Audit trail of **transfers only** (transfer_in / transfer_out). Feeds the mortality-split logic. |
+| `flock_records` | Daily mortality, culls, and slaughter events. **One record per batch per day.** |
+| `weight_records` | Individual bird weights with CV, mean, average weight. |
 | `feed_records` | Daily feed consumption, linked to inventory items. |
 | `expenses` | Costs linked to a batch (or general). |
-| `inventory_items` | Stock items (feed, medicine, etc.) with quantity, cost, and minimum level. |
+| `inventory_items` | Stock items (feed, medicine, etc.) with quantity, cost, minimum level. |
 | `inventory_consumptions` | Usage of inventory items, linked to batch (for cost allocation). |
 
 ---
 
-## Batch State (Checkpoint Approach)
+## Batch State Model (Recalculation Approach)
 
-**Core Idea:**  
-Instead of recalculating all metrics from historical records every time, we store the **current state** of the batch in dedicated columns. Each new event (feed, mortality, expense, transfer) updates this state by applying a delta – this is fast, consistent, and fully auditable.
+**Core Idea:**
+Batch state is **derived, not accumulated**. Every time a record changes (create / update / delete), the entire batch state is rebuilt from raw records + the transfer migration log. This guarantees accuracy after any deletion, correction, or edit.
 
 ### 1.1 State Fields
 
-| Column | Description | Formula / Update Rule |
-|--------|-------------|----------------------|
-| `current_count` | Number of birds currently in the batch | Updated directly by events |
-| `current_weight_kg` | Total weight of all birds in the batch (kg) | Updated by weight records, mortality, culls, slaughter, and transfers |
-| `current_cost` | Total cost incurred by the batch **not yet allocated** to slaughter/transfers (₦) | Updated by feed, expenses, inventory consumption, and transfers |
-| `current_average_weight` | Average weight per bird (kg) | `current_weight_kg / current_count` (recalculated after each update) |
-| `current_average_cost` | Average cost per bird (₦) | `current_cost / current_count` (recalculated) |
-| `total_weight_gain` | Cumulative live weight gained by the batch (kg) | Updated by weight records (difference from previous) |
-| `starting_flock` | Original number of birds placed | **Updated on transfers** (destination receives transferred birds) |
-| `total_mortality` | Cumulative deaths in the batch | Updated by mortality records **and transfers** (mortality share moves with birds) |
-| `total_feed_used` | Cumulative feed consumed (kg) | Updated by feed records **and transfers** (feed share moves with birds) |
+| Column | Description | Derived From |
+|--------|-------------|--------------|
+| `current_count` | Birds currently alive | `starting_flock − mortality − culls − slaughter − transfers_out` |
+| `current_weight_kg` | Total weight (kg) | `current_count × latest average weight` |
+| `current_cost` | Total cost not yet allocated | `initial_cost + feed + expenses + inventory − transfers_out + transfers_in` |
+| `current_average_weight` | Average weight per bird (kg) | `current_weight_kg ÷ current_count` |
+| `current_average_cost` | Average cost per bird (₦) | `current_cost ÷ current_count` |
+| `remaining_flock` | Mirror of `current_count` | Same as `current_count` |
+| `starting_flock` | Original placement | **Updated on transfers in** (increments) |
+| `total_mortality` | Historical mortality (carried) | `pen_mortality + transfer_in_mortality − transfer_out_mortality` |
+| `historical_mortality` | Same as above | Synced with `total_mortality` |
+| `pen_mortality` | Physical deaths in this batch | `SUM(flock_records.mortality)` |
+| `mortality_rate` | % mortality | `(historical_mortality ÷ starting_flock) × 100` |
+| `total_culls` | Cumulative culls | `SUM(flock_records.culls)` |
+| `total_slaughter` | Cumulative slaughter | `SUM(flock_records.slaughter)` |
+| `total_feed_used` | Cumulative feed (kg) | `SUM(feed_records.feed_used) + transfer_in_feed − transfer_out_feed` |
+| `total_expenses` | Cumulative expenses | `SUM(expenses.amount)` |
+| `total_weight_gain` | Cumulative weight gain | `transfer_in_weight_gain − transfer_out_weight_gain` |
+| `current_ifcr` | Instantaneous FCR | See [FCR Section](#feed-conversion-ratio-fcr) |
+| `current_cfcr` | Cumulative FCR | `total_feed_used ÷ total_weight_gain` |
+| `current_marginal_profit_percent` | Daily marginal profit | See [Metrics Section](#cost--financial-metrics) |
+| `peak_profit` | Highest profit seen | Tracked on each recalc |
+| `stop_loss_used_percent` | Stop-loss progress | `(peak_profit − current_profit) ÷ stop_loss_amount × 100` |
+
+### 1.2 When Is State Rebuilt?
+
+The following operations call `BatchRecalculationService::recalculateAll()`:
+
+| Operation | Trigger Point |
+|-----------|---------------|
+| Create/Update/Delete flock record | `FlockRecordController` |
+| Create/Update/Delete feed record | `FeedRecordController` |
+| Create/Update/Delete weight record | `WeightRecordController` |
+| Create/Update/Delete expense | `ExpenseController` |
+| Create/Delete inventory consumption | `InventoryConsumptionController` |
+| Batch transfer | `BatchTransferController` |
+| Batch create/edit | `BatchController` |
+| **Any edit via Control Panel** | `ControlPanelController` |
+| Manual trigger | `GET /recalculate-batches` |
 
 ---
 
-## State Update Operations
+## Record Operations & Recalculation Triggers
 
-### 2.1 Adding a Record (Feed, Expense, Mortality, etc.)
+### 2.1 Adding a Record
 
-When a new record is added, the state is updated by applying a delta.
+1. Save the raw record (e.g., `FlockRecord::create()`).
+2. Call `BatchRecalculationService::recalculateAll($batch)`.
+3. State is rebuilt from scratch — no delta math, no drift.
 
-**General formula:**
+### 2.2 Editing a Record
+
+1. Update the raw record.
+2. Call `BatchRecalculationService::recalculateAll($batch)`.
+
+**Special handling:**
+- **Feed record edit** → recalculates `feed_cost_per_kg`, `total_feed_cost`; adjusts inventory (restore old, deduct new); updates the linked `InventoryConsumption`.
+- **Weight record edit** → recalculates `average_weight`, `total_weight`, `coefficient_variation`, `cv_status`.
+
+### 2.3 Deleting a Record
+
+1. **Restore inventory** (for feed records: quantity_in_stock += feed_used; delete consumption).
+2. Delete the raw record.
+3. Call `BatchRecalculationService::recalculateAll($batch)`.
+
+Because state is derived, **deletion reverses everything automatically** — the deleted row simply stops being counted.
+
+---
+
+## Mortality Split Logic (Critical)
+
+This is the heart of the client's theft-investigation requirement. It's preserved across every recalculation.
+
+### 3.1 The Formula
+
 ```
-new_count   = old_count   + Δcount
-new_weight  = old_weight  + Δweight
-new_cost    = old_cost    + Δcost
+pen_mortality        = SUM(flock_records.mortality) for this batch
+transfer_in_mortality  = SUM(mortality_moved WHERE destination_batch_id = batch AND type = 'transfer_in')
+transfer_out_mortality = SUM(mortality_moved WHERE source_batch_id = batch AND type = 'transfer_out')   ← negative
 
-new_avg_weight = new_weight / new_count (if new_count > 0 else 0)
-new_avg_cost   = new_cost   / new_count (if new_count > 0 else 0)
+historical_mortality = pen_mortality + transfer_in_mortality + transfer_out_mortality
+mortality_rate       = (historical_mortality / starting_flock) × 100
 ```
 
-**Example – Feed Record:**
-- Δcount = 0
-- Δweight = 0
-- Δcost = `feed_used × cost_per_kg` (added to batch cost)
-- Also update `total_feed_used += feed_used`
+### 3.2 Worked Example
 
-**Example – Mortality Record:**
-- Δcount = `-mortality`
-- Δweight = `-mortality × current_avg_weight` (subtract weight of dead birds)
-- Δcost = 0 (cost is not reduced – it’s a loss)
-- Also update `total_mortality += mortality`
+**Batch A:** 1,000 birds, 50 deaths.
+- pen_mortality = 50
+- historical_mortality = 50
+- mortality_rate = 5.00%
 
-**Example – Cull Record:**
-- Same as mortality – birds removed, weight subtracted, no cost reduction.
+**Transfer 200 birds A → B.**
+Mortality share = 200 × (50 ÷ 1000) = 10.
 
-**Example – Slaughter Record:**
-- Δcount = `-slaughter`
-- Δweight = `-slaughter × current_avg_weight` (subtract weight of harvested birds)
-- Δcost = 0 (cost is allocated separately – see Section 4)
+Migration log:
+| source | dest | type | mortality_moved |
+|--------|------|------|-----------------|
+| A | B | transfer_out | −10 |
+| A | B | transfer_in | +10 |
 
-**Example – Expense:**
-- Δcount = 0
-- Δweight = 0
-- Δcost = `amount`
+**After recalc:**
+| Batch | pen | historical | rate |
+|-------|-----|-----------|------|
+| A | 50 | **40** | 4.00% |
+| B | 0 | **10** | 1.43% (10 ÷ 700) |
 
-All state changes are logged in `batch_state_migrations` with a snapshot of the state before and after.
+Sum check: 40 + 10 = 50 = total deaths ✓
+
+### 3.3 Why It's Bulletproof
+
+- **Immutable sources** — flock records and migration log are never deleted by recalc.
+- **Derived** — no state to drift.
+- **Delete-friendly** — deleting a flock record removes it from the sum; recalc fixes everything.
 
 ---
 
 ## Batch Transfer (Grading) with Split Logic
 
-### 3.1 The Problem We Solve
+### 4.1 Inputs
 
-When transferring a subset of birds from one batch to another:
-- These birds may have a **different weight** than the batch average (e.g., fast growers).
-- Their **mortality history** and **feed consumption** should travel with them to keep FCR and mortality rates accurate.
-- The destination batch's starting flock must be increased to include the transferred birds, so that mortality percentages remain meaningful.
+| Input | Source | Notes |
+|-------|--------|-------|
+| `transfer_count` | User | Number of birds |
+| `manual_weight` | User | Average weight of the transferred birds (may differ from batch avg) |
+| `source`, `destination` | Batch selection | Active batches only |
 
-### 3.2 Inputs for a Transfer
+### 4.2 Calculations
 
-| Input | Source | Description |
-|-------|--------|-------------|
-| `transfer_count` | User | Number of birds to move |
-| `manual_weight` | User (manual input) | Average weight of the specific birds being transferred (entered by farm staff) |
-| `source` | Selected batch | The batch the birds come from |
-| `destination` | Selected batch | The batch the birds go to |
-
-### 3.3 Calculations Performed
-
-#### A. Weight & Cost Transfer
 ```
 transfer_weight = transfer_count × manual_weight
 transfer_cost   = transfer_count × source.current_average_cost
-```
 
-#### B. Mortality Share Transfer
-Mortality is proportional to the source batch's mortality rate.
-
-```
-source_mortality_rate = source.total_mortality / source.starting_flock
+source_mortality_rate = source.historical_mortality / source.starting_flock
 transfer_mortality    = transfer_count × source_mortality_rate
+
+transfer_fraction     = transfer_count / source.current_count
+transfer_feed         = source.total_feed_used × transfer_fraction
+transfer_weight_gain  = source.total_weight_gain × transfer_fraction
 ```
 
-#### C. Feed & Weight Gain Share Transfer
-Feed and weight gain are proportional to the fraction of the source population being moved.
+### 4.3 Applying Changes
 
-```
-transfer_fraction = transfer_count / source.current_count
-transfer_feed     = source.total_feed_used × transfer_fraction
-transfer_weight_gain = source.total_weight_gain × transfer_fraction
-```
+**Migration log entries (only these are written):**
+- `transfer_out` (source): all values negative (`−count`, `−weight`, `−cost`, `−mortality`, `−feed`, `−weight_gain`).
+- `transfer_in` (destination): all values positive.
 
-### 3.4 Applying the Changes
+**Then:**
+- `destination.starting_flock += transfer_count`
+- Full recalc of **both batches**.
 
-**Source Batch (after transfer):**
-```
-current_count      -= transfer_count
-current_weight_kg  -= transfer_weight
-current_cost       -= transfer_cost
-total_mortality    -= transfer_mortality
-total_feed_used    -= transfer_feed
-total_weight_gain  -= transfer_weight_gain
-starting_flock     remains unchanged
-remaining_flock     = current_count
-```
-
-**Destination Batch (after transfer):**
-```
-current_count      += transfer_count
-current_weight_kg  += transfer_weight
-current_cost       += transfer_cost
-total_mortality    += transfer_mortality
-total_feed_used    += transfer_feed
-total_weight_gain  += transfer_weight_gain
-starting_flock     += transfer_count   ← Critical: ensures mortality % stays meaningful
-remaining_flock     = current_count
-```
-
-**Recalculate Averages:**
-```
-current_average_weight = current_weight_kg / current_count
-current_average_cost   = current_cost / current_count
-```
-
-### 3.5 Audit Log
-
-Two migration records are created:
-- **transfer_out** (from source)
-- **transfer_in** (to destination)
-
-Each record stores:
-- Count, weight, cost, mortality, feed, weight gain moved.
-- Snapshot of source and destination state before the transfer.
+**Cost, count, weight, mortality, feed, weight_gain for both batches are recomputed by the recalc service.** No manual deltas.
 
 ---
 
 ## Cost & Financial Metrics
 
-### 4.1 Cost per Bird (COP)
+### 5.1 Cost per Bird (COP)
+
 ```
 COP_per_bird = current_cost / current_count
 ```
-This is the live average cost per bird (unallocated costs only – costs already assigned to slaughtered or transferred birds are excluded).
 
-### 4.2 Cost per kg (dressed)
+Only **unallocated** costs are included. Costs already transferred out with birds are excluded.
+
+### 5.2 Dressed Weight Per Bird
+
 ```
-live_weight = current_average_weight
-dress_percentage = system_variable('dress_percentage', 75)
-dressed_weight = live_weight × (dress_percentage / 100)
+dressed_weight = current_average_weight × (dress_percentage / 100)
+```
+
+### 5.3 Cost per kg (dressed)
+
+```
 cost_per_kg = COP_per_bird / dressed_weight
 ```
 
-### 4.3 Selling Price per kg (Recommended)
-```
-profit_margin = system_variable('profit_margin', 20)
-selling_price_per_kg = cost_per_kg × (1 + profit_margin / 100)
-```
+### 5.4 Selling Price (Recommended)
 
-### 4.4 Selling Price per Bird
 ```
-selling_price_per_bird = COP_per_bird × (1 + profit_margin / 100)
-```
-
-### 4.5 Selling Price per Carton (10 kg)
-```
+selling_price_per_bird  = COP_per_bird × (1 + profit_margin / 100)
+selling_price_per_kg    = cost_per_kg × (1 + profit_margin / 100)
 selling_price_per_carton = selling_price_per_kg × 10
 ```
 
 ---
 
-## Slaughter & Cull Cost Allocation
+## Mortality vs COP Behavior
 
-When birds are removed from the batch (slaughter or cull), we allocate a portion of the batch’s cost to those birds – this prevents double-counting cost for birds that are no longer present.
+**Client requirement:** *"I want customers to pay for mortality."*
 
-**Variables:**
-- `total_COP` = current cost of the batch (before allocation)
-- `allocated_COP` = cost already allocated to previous removals
-- `remaining_fish` = current count before removal
-- `harvest_quantity` = number of birds removed
+### 6.1 The Rule
 
-**Steps:**
-```
-unallocated_COP = total_COP - allocated_COP
-COP_per_fish   = unallocated_COP / remaining_fish
-harvest_COP    = COP_per_fish × harvest_quantity
-allocated_COP  = allocated_COP + harvest_COP
-remaining_fish = remaining_fish - harvest_quantity
-```
+When birds die:
+- **Cost does NOT decrease** (feed, expenses, and initial cost are already spent).
+- **Count decreases.**
+- Therefore **COP increases.**
 
-**Weight Removal:**
-```
-removed_weight = harvest_quantity × current_average_weight
-current_weight_kg -= removed_weight
-```
+### 6.2 Worked Example
 
-The weight removal is automatically handled when `current_count` and `current_average_weight` are updated.
+| Scenario | Cost | Count | COP | Sell Price (20% margin) |
+|----------|------|-------|-----|-------------------------|
+| 0 mortality | ₦400,000 | 1,000 | ₦400 | ₦480 |
+| 100 mortality | ₦400,000 | 900 | ₦444 | ₦533 |
+| 200 mortality | ₦400,000 | 800 | ₦500 | ₦600 |
+| 500 mortality | ₦400,000 | 500 | ₦800 | ₦960 |
+
+The survivors carry the full cost of the batch. Customers pay for the loss.
+
+### 6.3 Event-by-Event Impact
+
+| Event | Cost Impact | Count Impact | COP Impact |
+|-------|-------------|--------------|------------|
+| **Mortality** | Unchanged | ↓ | ⬆️ Increases |
+| **Culls** | Unchanged | ↓ | ⬆️ Increases |
+| **Slaughter** | Cost allocated out | ↓ | ⬆️ Slight (cost/count) |
+| **Transfer Out** | Cost leaves with birds | ↓ | ➡️ Unchanged |
+| **Transfer In** | Cost arrives with birds | ⬆️ | ➡️ Unchanged |
+| **Feed Added** | ⬆️ | — | ⬆️ Increases |
+| **Expense Added** | ⬆️ | — | ⬆️ Increases |
 
 ---
 
 ## Feed Conversion Ratio (FCR)
 
-### 6.1 Cumulative FCR (cFCR)
-Measures overall feed efficiency from the start of the batch (or from the last reset).
+### 7.1 Cumulative FCR (cFCR)
+
 ```
 cFCR = total_feed_used / total_weight_gain
 ```
-- A lower cFCR is better (less feed per kg of gain).
-- Updated **after every feed record and after transfers**.
 
-### 6.2 Instantaneous FCR (iFCR)
-Measures feed efficiency over a recent period (e.g., last `n` days).
+- Lower is better.
+- Updated after every feed record and after every transfer (because feed and weight gain shares travel with birds).
+
+### 7.2 Instantaneous FCR (iFCR)
+
 ```
-iFCR = feed_used_in_period / weight_gained_in_period
+iFCR = feed_used_last_period / weight_gained_last_period
 ```
-- Weight gained in period is derived from weight records (or from checkpoint state).
-- If no weight records exist in the period, iFCR is not computed.
+
+- Period = `weighing_frequency_days` (default 4).
+- Uses the most recent weight records and feed records.
 
 **Interpretation:**
-- `iFCR < cFCR` → bird are performing better than historical average.
-- `iFCR ≈ cFCR` → Performance is consistent.
-- `iFCR > cFCR` → Performance is declining (warning).
+- `iFCR < cFCR` → Current efficiency better than historical.
+- `iFCR ≈ cFCR` → Consistent.
+- `iFCR > cFCR` → Efficiency declining (warning).
 
 ---
 
-## Weight Records & Coefficient of Variation (CV)
+## Weight Records & CV
 
-### 7.1 Sample Size
-```
-required_sample = min(max(ceil(remaining_flock × 0.10), 5), 10)
-```
-- Minimum 5 birds, maximum 10.
-- Used in the weight record form to guide staff.
+### 8.1 Sample Size
 
-### 7.2 Coefficient of Variation (CV)
 ```
-mean = sum(weights) / count(weights)
-variance = Σ(weight - mean)² / count
-stddev = √variance
-CV = (stddev / mean) × 100
+required_sample = min(max(ceil(current_count × 0.10), 5), 10)
 ```
-- CV is expressed as a percentage.
-- Higher CV indicates greater size variation.
 
-### 7.3 CV Status Interpretation (Poultry)
+### 8.2 Coefficient of Variation
 
-| CV Range | Status | Action |
-|----------|--------|--------|
-| < 10%    | Excellent | Uniform flock |
-| 10–12%   | Caution   | Monitor |
-| 12–15%   | Warning   | Check feeding/health |
-| ≥ 15%    | Rejected  | Re‑take sample (invalid) |
+```
+mean     = sum(weights) / count
+variance = Σ(weight − mean)² / count
+stddev   = √variance
+CV       = (stddev / mean) × 100
+```
+
+### 8.3 CV Status (High Variation Allowed)
+
+| CV Range | Status | Handling |
+|----------|--------|----------|
+| < 10% | Excellent | Saved |
+| 10–12% | Caution | Saved |
+| 12–15% | Warning | Saved |
+| ≥ 15% | High | **Saved with flash warning** |
+
+**Threshold is configurable** via the `CV_THRESHOLD` constant in `WeightRecordController` (default 20). High CV is **never rejected** — the client wants the data stored regardless.
+
+### 8.4 Auto-Recalculated Fields on Weight Edit
+
+Editing `individual_weights` (via Control Panel or form) triggers:
+- `birds_weighed`, `total_weight`, `average_weight`, `coefficient_variation`, `cv_status`, `expected_weight` — all recalculated.
 
 ---
 
 ## Price Calculator
 
-Used to determine selling price for a specific customer order.
-
 **Inputs:**
-- `customer_bird_weight` – weight of the bird the customer wants (kg)
-- `mode_weight` – most frequent/dominant weight in the batch (kg)
-- `profit_margin` – target margin (from system variables)
+- `customer_bird_weight` — weight the customer wants (kg)
+- `mode_weight` — most frequent weight in the batch (kg)
+- `profit_margin` — from system variables
 
 **Formula:**
 ```
-cost_scaled = (customer_bird_weight / mode_weight) × current_average_cost
+cost_scaled            = (customer_bird_weight / mode_weight) × current_average_cost
 selling_price_per_bird = cost_scaled × (1 + profit_margin / 100)
-```
-**Derived:**
-```
-dressed_weight = customer_bird_weight × (dress_percentage / 100)
-selling_price_per_kg = selling_price_per_bird / dressed_weight
+dressed_weight         = customer_bird_weight × (dress_percentage / 100)
+selling_price_per_kg   = selling_price_per_bird / dressed_weight
 selling_price_per_carton = selling_price_per_kg × 10
 ```
 
@@ -337,29 +355,82 @@ selling_price_per_carton = selling_price_per_kg × 10
 
 ## Inventory & Consumption
 
-### 9.1 Stock Update
-When a feed record is created:
+### 10.1 Feed Record → Inventory
+
+**On create:**
 ```
 inventory.quantity_in_stock -= feed_used
-inventory.quantity_used    += feed_used
+inventory.quantity_used     += feed_used
+InventoryConsumption created (source_type = 'feed', source_id = feed_record.id)
 ```
 
-### 9.2 Cost Addition
-When an inventory item is consumed, its cost is added to the batch’s `current_cost`:
+**On delete:**
 ```
-batch.current_cost += feed_used × cost_per_unit
+inventory.quantity_in_stock += feed_used
+inventory.quantity_used     -= feed_used
+InventoryConsumption deleted
 ```
+
+**On edit (Control Panel):**
+- Restore old stock to old item.
+- Deduct new stock from new item.
+- Update or recreate the `InventoryConsumption` row.
+
+### 10.2 Cost Flow
+
+All `inventory_consumptions.total_cost` entries (excluding `waste`) are summed by the recalc service and added to the batch's `current_cost`.
+
+---
+
+## Control Panel
+
+A dedicated admin-only page for correcting mistakes. Only **safe fields** are editable.
+
+### 11.1 Editable Fields Per Table
+
+| Table | Editable | Locked (Read-Only) |
+|-------|----------|-------------------|
+| `poultry_batches` | name, hatchery, start_date, starting_flock, initial_chicken_cost, status, phase, pen_id | all derived metrics |
+| `flock_records` | date, mortality, culls, slaughter, slaughter_avg_weight, notes | delta_* fields |
+| `weight_records` | date, individual_weights, notes | average_weight, total_weight, cv, cv_status, expected_weight |
+| `feed_records` | date, feed_used, inventory_item_id | feed_cost_per_kg, total_feed_cost, feed_per_bird |
+| `expenses` | date, category, description, amount, receipt_number, vendor | — |
+
+### 11.2 Backend Whitelisting
+
+Even if a client bypasses the frontend, the controller enforces the whitelist:
+
+```php
+$editable = self::EDITABLE_FIELDS[$table];
+$filtered = array_intersect_key($data, array_flip($editable));
+$record->update($filtered);
+```
+
+**Anything not in the whitelist is silently ignored.**
+
+### 11.3 Special Handling
+
+- **Feed edit** → recompute cost + adjust inventory + update consumption.
+- **Weight edit** → decode JSON/comma input → rerun `calculateMetrics()`.
+- **Batch edit** → does NOT touch derived fields (only safe base fields).
+
+### 11.4 After Every Operation
+
+The Control Panel calls `BatchRecalculationService::recalculateAll()` — so editing any record propagates correctly to bird count, COP, mortality split, FCR, and all derived metrics.
+
+### 11.5 Transfer Migrations
+
+**Transfer migrations are not exposed in the Control Panel.** They are immutable because reversing a transfer requires also adjusting `starting_flock`. If reversal is needed, it must be done via a dedicated "Reverse Transfer" action (future).
 
 ---
 
 ## Batch Age (Dynamic)
 
-Age is calculated on‑the‑fly, not stored.
 ```
-age_days = today - start_date
+age_days = today − start_date
 ```
-- Used for sorting and display.
-- The stored `current_age_days` is kept for sorting performance (updated periodically).
+
+Accessor: `$batch->age_days`. Always fresh, no storage. `current_age_days` column is kept for sorting performance only.
 
 ---
 
@@ -367,12 +438,12 @@ age_days = today - start_date
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `profit_margin` | 20 | Target profit margin (%) |
-| `dress_percentage` | 75 | Dressing out percentage (live → dressed) |
-| `weighing_frequency_days` | 4 | Days between scheduled weighings |
-| `daily_profit_tolerance` | -15 | Daily profit % threshold for alert |
+| `profit_margin` | 20 | Target margin (%) |
+| `dress_percentage` | 75 | Dressing out % |
+| `weighing_frequency_days` | 4 | Days between weighings |
+| `daily_profit_tolerance` | −15 | Daily profit % threshold for alert |
 | `fcr_efficiency_tolerance` | 20 | FCR efficiency drop threshold (%) |
-| `stop_loss_amount` | 20000 | Maximum loss before alert (₦) |
+| `stop_loss_amount` | 20,000 | Max loss before alert (₦) |
 
 ---
 
@@ -381,101 +452,130 @@ age_days = today - start_date
 | Trigger | Condition | Severity |
 |---------|-----------|----------|
 | Daily profit | `current_marginal_profit_percent <= daily_profit_tolerance` | Critical |
-| FCR efficiency | `(iFCR / cFCR - 1) × 100 >= fcr_efficiency_tolerance` | Warning |
-| Stop‑loss | `peak_profit - current_profit >= stop_loss_amount` | Critical |
-| Missed weighings | 3+ missed scheduled weighings | Emergency |
-| Weight loss | > 5% loss between consecutive weight records | Emergency |
-| High mortality | `total_mortality / starting_flock × 100 >= 7%` | Emergency |
+| FCR efficiency | `(iFCR / cFCR − 1) × 100 >= fcr_efficiency_tolerance` | Warning |
+| Stop-loss | `peak_profit − current_profit >= stop_loss_amount` | Critical |
+| Missed weighings | 3+ missed schedules | Emergency |
+| Weight loss | > 5% between consecutive weighings | Emergency |
+| High mortality | `mortality_rate >= 7%` | Emergency |
 
 ---
 
 ## Pen Assignment
 
-When a batch is created with phase `batch`:
-- The system finds an available pen (`Pen::available()`).
-- If a pen is found and its capacity ≥ starting flock, assign it.
-- Otherwise, warn the user but allow creation.
+When a batch is created with `phase = 'batch'`:
+- Find the first available pen with capacity ≥ `starting_flock`.
+- Assign; otherwise flash warning.
 
 ---
 
-## Migration Log (Audit Trail)
+## Migration Log
 
-Every state change is recorded in `batch_state_migrations`. The table structure:
+Every transfer writes two rows in `batch_state_migrations`:
 
 | Column | Description |
 |--------|-------------|
-| `source_batch_id` | Batch being modified |
-| `destination_batch_id` | Batch receiving (for transfers) |
-| `migration_type` | `feed`, `expense`, `mortality`, `cull`, `slaughter`, `transfer_out`, `transfer_in`, `weight_gain` |
-| `count_moved` | Number of birds changed |
-| `weight_moved` | Weight changed (kg) |
-| `cost_moved` | Cost changed (₦) |
-| `mortality_moved` | Mortality share moved (for transfers) |
-| `feed_moved` | Feed used share moved (for transfers) |
-| `weight_gain_moved` | Weight gain share moved (for transfers) |
-| `source_state_before` | JSON snapshot of source before change |
-| `destination_state_before` | JSON snapshot of destination before change |
+| `source_batch_id` | Batch losing birds |
+| `destination_batch_id` | Batch gaining birds |
+| `migration_type` | `transfer_out` or `transfer_in` |
+| `source_type` | `batch_transfer` |
+| `count_moved` | Positive on transfer_in, negative on transfer_out |
+| `weight_moved` | Same sign convention |
+| `cost_moved` | Same sign convention |
+| `mortality_moved` | Same sign convention |
+| `feed_moved` | Same sign convention |
+| `weight_gain_moved` | Same sign convention |
+| `source_state_before` | JSON snapshot |
+| `destination_state_before` | JSON snapshot |
+
+This log is the **only persisted record** of a transfer. Feeds the mortality and FCR split logic.
 
 ---
 
 ## Flowchart Summary
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                   BATCH CREATION                                 │
-│  - start_date, starting_flock, initial_chicken_cost             │
-│  - phase (brooding / batch)                                     │
-│  - pen assignment (if batch phase)                              │
-│  - checkpoint columns initialized                               │
-└──────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                     BATCH CREATION                            │
+│  start_date, starting_flock, initial_cost, phase, pen         │
+│  → Full recalc initializes derived state                      │
+└───────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   DAILY OPERATIONS                              │
-│  ┌───────────────────┐  ┌───────────────────┐  ┌──────────────┐│
-│  │   Feed Record     │  │  Weight Record    │  │ Flock Record ││
-│  │  - feed_used      │  │  - individual     │  │ - mortality  ││
-│  │  - cost_per_kg    │  │    weights        │  │ - culls      ││
-│  │  - total_cost     │  │  - CV calculation │  │ - slaughter  ││
-│  │                   │  │  - status update  │  │ - weight sub ││
-│  └───────────────────┘  └───────────────────┘  └──────────────┘│
-│         │                        │                        │      │
-│         └────────────────────────┼────────────────────────┘      │
-│                                  ▼                               │
-│          ┌──────────────────────────────────────────────┐       │
-│          │  Batch State Update (Checkpoint)             │       │
-│          │  - current_count, current_weight_kg,        │       │
-│          │    current_cost, mortality, feed, weight_gain│       │
-│          │  - log to batch_state_migrations            │       │
-│          └──────────────────────────────────────────────┘       │
-└──────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                     DAILY OPERATIONS                          │
+│   Feed ────┐                                                  │
+│   Weight ──┤────► Save raw record ──► recalculateAll(batch)   │
+│   Flock ───┤                                                  │
+│   Expense ─┘                                                  │
+└───────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   TRANSFER (Grading)                            │
-│  - Manual weight entry for transferred birds                   │
-│  - Split mortality, feed, weight gain proportionally           │
-│  - Update starting_flock of destination                        │
-│  - Log transfer_out and transfer_in migrations                 │
-└──────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                   BATCH TRANSFER (Grading)                    │
+│  - Manual weight entry                                        │
+│  - Write 2 migration rows (out / in)                          │
+│  - destination.starting_flock += count                        │
+│  - recalculateAll(source) + recalculateAll(destination)       │
+└───────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   HARVEST (Slaughter)                           │
-│  - allocate cost using harvest allocation formula              │
-│  - subtract weight from batch weight                           │
-│  - update allocated_COP and remaining_count                    │
-└──────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                    DELETION / EDIT                            │
+│  - Feed delete → restore inventory → delete → recalc          │
+│  - Flock delete → delete → recalc                             │
+│  - Weight delete → delete → recalc                            │
+│  - Expense delete → delete → recalc                           │
+│  - Control Panel uses same path (whitelisted fields only)     │
+└───────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   ANALYTICS & INSIGHTS                          │
-│  - FCR (cFCR, iFCR)                                            │
-│  - Growth charts (weight vs age)                               │
-│  - Profit margins                                              │
-│  - Slaughter triggers                                          │
-└──────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                   ANALYTICS & DISPLAY                         │
+│  - Bird count, weight, cost, COP                              │
+│  - Mortality split (pen / historical / rate)                  │
+│  - FCR (cFCR, iFCR)                                           │
+│  - Growth charts                                              │
+│  - Slaughter triggers                                         │
+└───────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Deployment & Recovery
+
+### 18.1 Pending Migrations
+
+| Migration | Adds |
+|-----------|------|
+| `2026_09_09_add_source_to_batch_state_migrations` | `source_type`, `source_id` |
+| `2026_09_09_add_delta_columns_to_flock_records` | `delta_count`, `delta_weight`, `delta_mortality` (legacy — no longer used, kept for backward compatibility) |
+
+### 18.2 Force Global Recalculation
+
+```
+GET /recalculate-batches   (admin-only)
+```
+
+Rebuilds every batch from raw records + migration log. Use after:
+- A bulk data import
+- A manual SQL fix
+- Deploying new recalc logic
+
+### 18.3 Recovery from Bad Data
+
+Because state is derived, corrections are simple:
+1. Fix the offending raw record (via Control Panel or SQL).
+2. Hit `/recalculate-batches` (or edit any related record — the recalc fires automatically).
+
+No manual "un-allocation" or delta chasing needed.
+
+### 18.4 Immutable Sources
+
+Never delete directly via SQL:
+- `batch_state_migrations` (breaks mortality split + `starting_flock`)
+- `inventory_consumptions` (breaks inventory traceability)
+
+Use the Control Panel or dedicated actions instead.
 
 ---
 
@@ -483,17 +583,20 @@ Every state change is recorded in `batch_state_migrations`. The table structure:
 
 | Feature | Status |
 |---------|--------|
-| Checkpoint state (count, weight, cost) | ✅ Fully implemented |
-| Manual weight entry on transfers | ✅ Implemented |
-| Mortality split on transfers | ✅ Implemented |
-| Feed and weight gain split on transfers | ✅ Implemented |
-| Destination `starting_flock` update | ✅ Implemented |
-| Percentage bar `min()` fix | ✅ Implemented |
-| Cost allocation for slaughter | ✅ Implemented |
-| Weight subtraction for culls/slaughter | ✅ Implemented |
-| FCR (cFCR, iFCR) on batch details | ✅ Displayed after each update |
-| Migration audit log | ✅ Fully functional |
+| Recalculation service (`BatchRecalculationService`) | ✅ Every change triggers rebuild |
+| Mortality split (pen / historical / rate) | ✅ Preserved across all operations |
+| Feed deletion → inventory restore | ✅ |
+| Flock / Weight / Feed / Expense delete → full state rebuild | ✅ |
+| Duplicate flock record per day blocked | ✅ Friendly error |
+| High CV allowed (threshold configurable) | ✅ |
+| Control Panel with field whitelisting | ✅ |
+| Control Panel covers batches, flock, weight, feed, expenses | ✅ |
+| Feed edit recalculation + inventory adjustment | ✅ |
+| Weight edit recalculation | ✅ |
+| Global `/recalculate-batches` route | ✅ |
+| Mortality increases COP (client requirement) | ✅ |
 
 ---
 
-*This document is the single source of truth for all calculations in the BWET Farms poultry module. It is updated whenever logic changes.*
+*This document is the single source of truth for all calculations in the BWET Farms poultry module.*  
+*Version 3.0 — Recalculation-based model with preserved mortality split.*
