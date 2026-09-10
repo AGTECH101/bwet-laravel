@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /
+
+# Block sensitive/admin areas
+Disallow: /admin
+Disallow: /login
+Disallow: /register
+Disallow: /password-reset
+Disallow: /dashboard
+Disallow: /api/
+
+# Block Laravel's internal paths (if exposed)
+Disallow: /storage/framework/
+Disallow: /storage/logs/
+Disallow: /vendor/
+
+# Block query strings (optional – prevents duplicate content)
+Disallow: /*?*
+
+# Allow the sitemap (helps crawlers find it)
+Sitemap: https://bwetfarms.com/sitemap.xml
