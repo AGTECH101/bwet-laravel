@@ -4,136 +4,128 @@ namespace App\Services\Poultry;
 
 use App\Models\BatchStateMigration;
 use App\Models\Poultry\Batch;
+use App\Models\SystemVariable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class BatchRecalculationService
 {
-    /**
-     * Fully recalculate a batch's state from raw records + transfer history.
-     *
-     * Mortality split logic:
-     *   - pen_mortality = SUM(flock_records.mortality) – physical deaths in this batch
-     *   - historical_mortality = pen_mortality + transfer_in_mortality - transfer_out_mortality
-     *   - total_mortality = historical_mortality (carried value)
-     */
     public static function recalculateAll(Batch $batch): void
     {
-        if (!$batch->exists) {
+        if (! $batch->exists) {
             return;
         }
 
         DB::transaction(function () use ($batch) {
             $startingFlock = (int) $batch->starting_flock;
-            $initialCost = (float) $batch->initial_chicken_cost;
+            $initialCost   = (float) $batch->initial_chicken_cost;
 
-            // ============ Flock records ============
+            // ───────── Flock totals ─────────
             $flockTotals = $batch->flockRecords()
                 ->selectRaw('
                     COALESCE(SUM(mortality), 0) as total_mortality,
-                    COALESCE(SUM(culls), 0) as total_culls,
+                    COALESCE(SUM(culls), 0)     as total_culls,
                     COALESCE(SUM(slaughter), 0) as total_slaughter
                 ')
                 ->first();
 
             $totalMortality = (int) $flockTotals->total_mortality;
-            $totalCulls = (int) $flockTotals->total_culls;
+            $totalCulls     = (int) $flockTotals->total_culls;
             $totalSlaughter = (int) $flockTotals->total_slaughter;
 
-            // ============ Feed ============
+            // ───────── Feed / expenses ─────────
             $totalFeedUsed = (float) $batch->feedRecords()->sum('feed_used');
             $totalFeedCost = (float) $batch->feedRecords()->sum('total_feed_cost');
-
-            // ============ Expenses ============
             $totalExpenses = (float) $batch->expenses()->sum('amount');
 
-            // ============ Inventory consumptions (excluding waste) ============
+            // Non-feed, non-waste consumptions add cost on top of feed_records.
             $totalInventoryCost = (float) $batch->inventoryConsumptions()
-                ->where('source_type', '!=', 'waste')
+                ->whereNotIn('source_type', ['waste', 'feed'])
                 ->sum('total_cost');
 
-            // ============ Transfers OUT ============
+            // ───────── Transfers ─────────
             $transfersOut = BatchStateMigration::where('source_batch_id', $batch->id)
                 ->where('migration_type', 'transfer_out')
                 ->get();
 
-            $transferOutCount = (int) $transfersOut->sum('count_moved');
-            $transferOutCost = (float) $transfersOut->sum('cost_moved');
-            $transferOutWeight = (float) $transfersOut->sum('weight_moved');
-            $transferOutMortality = (float) $transfersOut->sum('mortality_moved');
-            $transferOutFeed = (float) $transfersOut->sum('feed_moved');
-            $transferOutWeightGain = (float) $transfersOut->sum('weight_gain_moved');
-
-            // ============ Transfers IN ============
             $transfersIn = BatchStateMigration::where('destination_batch_id', $batch->id)
                 ->where('migration_type', 'transfer_in')
                 ->get();
 
-            $transferInCount = (int) $transfersIn->sum('count_moved');
-            $transferInCost = (float) $transfersIn->sum('cost_moved');
-            $transferInWeight = (float) $transfersIn->sum('weight_moved');
-            $transferInMortality = (float) $transfersIn->sum('mortality_moved');
-            $transferInFeed = (float) $transfersIn->sum('feed_moved');
-            $transferInWeightGain = (float) $transfersIn->sum('weight_gain_moved');
+            $transferOutCount      = (int)   $transfersOut->sum('count_moved');        // negative
+            $transferOutCost       = (float) $transfersOut->sum('cost_moved');         // negative
+            $transferOutMortality  = (float) $transfersOut->sum('mortality_moved');    // negative
+            $transferOutFeed       = (float) $transfersOut->sum('feed_moved');         // negative
+            $transferOutWeightGain = (float) $transfersOut->sum('weight_gain_moved');  // negative
 
-            // ============ Current count ============
-            // starting_flock already accounts for transferred-in birds (incremented during transfer)
-            $currentCount = $startingFlock
+            $transferInCount       = (int)   $transfersIn->sum('count_moved');         // positive
+            $transferInCost        = (float) $transfersIn->sum('cost_moved');          // positive
+            $transferInMortality   = (float) $transfersIn->sum('mortality_moved');     // positive
+            $transferInFeed        = (float) $transfersIn->sum('feed_moved');          // positive
+            $transferInWeightGain  = (float) $transfersIn->sum('weight_gain_moved');   // positive
+
+            // ───────── Current count ─────────
+            $currentCount = max(0,
+                $startingFlock
                 - $totalMortality
                 - $totalCulls
                 - $totalSlaughter
-                + $transferOutCount; // negative value
+                + $transferOutCount
+            );
 
-            $currentCount = max(0, $currentCount);
-
-            // ============ Current cost ============
-            $currentCost = $initialCost
+            // ───────── Current cost (total accumulated) ─────────
+            $currentCost = max(0,
+                $initialCost
                 + $totalFeedCost
                 + $totalExpenses
                 + $totalInventoryCost
-                + $transferOutCost   // negative
-                + $transferInCost;   // positive
+                + $transferOutCost
+                + $transferInCost
+            );
 
-            $currentCost = max(0, $currentCost);
+            // ───────── Current weight ─────────
+            [$currentWeight, $currentAvgWeight] = self::calculateCurrentWeight(
+                $batch,
+                $currentCount,
+                $transferInCount
+            );
 
-            // ============ Weight ============
-            $latestWeight = $batch->weightRecords()->latest('date')->first();
-            $avgWeight = $latestWeight ? (float) $latestWeight->average_weight : 0;
-            $currentWeight = $currentCount * $avgWeight;
-
-            // ============ Mortality split ============
+            // ───────── Mortality split ─────────
             $penMortality = $totalMortality;
-            $historicalMortality = $totalMortality
+            $historicalMortality = max(0,
+                $totalMortality
+                + $transferInMortality
                 + $transferOutMortality
-                + $transferInMortality;
-            $historicalMortality = max(0, $historicalMortality);
+            );
 
-            // ============ Total feed used (cumulative, adjusted by transfers) ============
-            $cumulativeFeed = $totalFeedUsed
-                + $transferOutFeed   // negative
-                + $transferInFeed;   // positive
-            $cumulativeFeed = max(0, $cumulativeFeed);
+            // ───────── Cumulative feed & weight gain ─────────
+            $cumulativeFeed       = max(0, $totalFeedUsed + $transferInFeed + $transferOutFeed);
+            $cumulativeWeightGain = max(0, $transferInWeightGain + $transferOutWeightGain);
 
-            // ============ Total weight gain (cumulative, adjusted by transfers) ============
-            $cumulativeWeightGain = $transferOutWeightGain + $transferInWeightGain;
-            $cumulativeWeightGain = max(0, $cumulativeWeightGain);
+            // ───────── Unallocated basis for the remaining flock ─────────
+            $unallocatedCost = max(0, $currentCost - (float) $batch->cost_allocated_so_far);
 
-            // ============ Save ============
-            $batch->current_count = $currentCount;
-            $batch->current_weight_kg = $currentWeight;
-            $batch->current_cost = $currentCost;
-            $batch->current_average_weight = $currentCount > 0 ? $currentWeight / $currentCount : 0;
-            $batch->current_average_cost = $currentCount > 0 ? $currentCost / $currentCount : 0;
+            // ───────── Persist ─────────
+            $batch->current_count          = $currentCount;
+            $batch->current_weight_kg      = $currentWeight;
+            $batch->current_cost           = $currentCost;
+            $batch->current_average_weight = $currentAvgWeight;
 
-            $batch->total_mortality = $historicalMortality;
+            // This must match BatchCalculationService::getCostPerBird(), which
+            // computes (totalInvestment − cost_allocated_so_far) / remaining_flock.
+            $batch->current_average_cost = $currentCount > 0
+                ? $unallocatedCost / $currentCount
+                : 0;
+
+            $batch->total_mortality      = $historicalMortality;
             $batch->historical_mortality = $historicalMortality;
-            $batch->pen_mortality = $penMortality;
+            $batch->pen_mortality        = $penMortality;
 
-            $batch->total_culls = $totalCulls;
-            $batch->total_slaughter = $totalSlaughter;
-            $batch->total_feed_used = $cumulativeFeed;
-            $batch->total_expenses = $totalExpenses;
-            $batch->remaining_flock = $currentCount;
+            $batch->total_culls       = $totalCulls;
+            $batch->total_slaughter   = $totalSlaughter;
+            $batch->total_feed_used   = $cumulativeFeed;
+            $batch->total_expenses    = $totalExpenses;
+            $batch->remaining_flock   = $currentCount;
             $batch->total_weight_gain = $cumulativeWeightGain;
 
             $batch->mortality_rate = $startingFlock > 0
@@ -142,16 +134,151 @@ class BatchRecalculationService
 
             $batch->save();
 
-            // Refresh FCR, profit, etc.
+            // FCR, profit, selling price, stop-loss, etc.
             $batch->updateCachedMetrics();
         });
     }
 
-    /**
-     * Recalculate ALL batches.
-     *
-     * @return int Number of batches processed
-     */
+    private static function calculateCurrentWeight(
+        Batch $batch,
+        int $currentCount,
+        int $transferInTotalCount
+    ): array {
+        if ($currentCount <= 0) {
+            return [0.0, 0.0];
+        }
+
+        $weightRecords = $batch->weightRecords()
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+
+        if ($weightRecords->isEmpty()) {
+            $chickWeight = (float) SystemVariable::getValue('chick_weight_kg', 0.045);
+            return [round($currentCount * $chickWeight, 3), round($chickWeight, 3)];
+        }
+
+        $latestWeight  = $weightRecords->last();
+        $referenceAvg  = (float) $latestWeight->average_weight;
+        $referenceDate = $latestWeight->date;
+
+        $initialFlock = $batch->starting_flock - $transferInTotalCount;
+
+        $flockUpToRef = $batch->flockRecords()
+            ->whereDate('date', '<=', $referenceDate)
+            ->selectRaw('
+                COALESCE(SUM(mortality), 0) as total_mortality,
+                COALESCE(SUM(culls), 0)     as total_culls,
+                COALESCE(SUM(slaughter), 0) as total_slaughter
+            ')
+            ->first();
+
+        $transfersOutUpToRef = (int) BatchStateMigration::where('source_batch_id', $batch->id)
+            ->where('migration_type', 'transfer_out')
+            ->whereDate('created_at', '<=', $referenceDate)
+            ->sum('count_moved');
+
+        $transfersInUpToRef = (int) BatchStateMigration::where('destination_batch_id', $batch->id)
+            ->where('migration_type', 'transfer_in')
+            ->whereDate('created_at', '<=', $referenceDate)
+            ->sum('count_moved');
+
+        $countAtRef = max(0,
+            (int) $initialFlock
+            + $transfersInUpToRef
+            + $transfersOutUpToRef
+            - (int) $flockUpToRef->total_mortality
+            - (int) $flockUpToRef->total_culls
+            - (int) $flockUpToRef->total_slaughter
+        );
+
+        $runningCount  = $countAtRef;
+        $runningWeight = $countAtRef * $referenceAvg;
+
+        // Collect events after the reference date.
+        $events = collect();
+
+        foreach ($batch->flockRecords()
+            ->whereDate('date', '>', $referenceDate)
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get() as $fr) {
+            $events->push([
+                'kind'   => 'flock',
+                'at'     => $fr->date->toDateString() . ' ' . ($fr->created_at?->format('H:i:s') ?? '23:59:59'),
+                'record' => $fr,
+            ]);
+        }
+
+        foreach (BatchStateMigration::where('source_batch_id', $batch->id)
+            ->where('migration_type', 'transfer_out')
+            ->whereDate('created_at', '>', $referenceDate)
+            ->get() as $t) {
+            $events->push([
+                'kind'   => 'transfer_out',
+                'at'     => $t->created_at->toDateTimeString(),
+                'record' => $t,
+            ]);
+        }
+
+        foreach (BatchStateMigration::where('destination_batch_id', $batch->id)
+            ->where('migration_type', 'transfer_in')
+            ->whereDate('created_at', '>', $referenceDate)
+            ->get() as $t) {
+            $events->push([
+                'kind'   => 'transfer_in',
+                'at'     => $t->created_at->toDateTimeString(),
+                'record' => $t,
+            ]);
+        }
+
+        $events = $events->sortBy('at')->values();
+
+        foreach ($events as $event) {
+            $avg = $runningCount > 0 ? $runningWeight / $runningCount : 0;
+
+            switch ($event['kind']) {
+                case 'flock':
+                    $fr = $event['record'];
+
+                    $mortality = (int) $fr->mortality;
+                    $runningCount  -= $mortality;
+                    $runningWeight -= $mortality * $avg;
+
+                    $culls = (int) $fr->culls;
+                    $runningCount  -= $culls;
+                    $runningWeight -= $culls * $avg;
+
+                    $slaughter    = (int) $fr->slaughter;
+                    $slaughterAvg = ($fr->slaughter_avg_weight && $fr->slaughter_avg_weight > 0)
+                        ? (float) $fr->slaughter_avg_weight
+                        : $avg;
+                    $runningCount  -= $slaughter;
+                    $runningWeight -= $slaughter * $slaughterAvg;
+                    break;
+
+                case 'transfer_out':
+                    $t = $event['record'];
+                    $runningCount  += (int)   $t->count_moved;
+                    $runningWeight += (float) $t->weight_moved;
+                    break;
+
+                case 'transfer_in':
+                    $t = $event['record'];
+                    $runningCount  += (int)   $t->count_moved;
+                    $runningWeight += (float) $t->weight_moved;
+                    break;
+            }
+
+            $runningCount  = max(0, $runningCount);
+            $runningWeight = max(0, $runningWeight);
+        }
+
+        $avg = $runningCount > 0 ? $runningWeight / $runningCount : 0;
+
+        return [round($runningWeight, 3), round($avg, 3)];
+    }
+
     public static function recalculateAllBatches(): int
     {
         $count = 0;
@@ -160,7 +287,7 @@ class BatchRecalculationService
                 try {
                     self::recalculateAll($batch);
                     $count++;
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     Log::error("Recalc failed for batch {$batch->id}: " . $e->getMessage());
                 }
             }

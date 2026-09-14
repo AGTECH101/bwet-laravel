@@ -18,7 +18,6 @@
 
 @section('content')
 <div class="space-y-6">
-    <!-- Summary -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
@@ -35,7 +34,7 @@
         </div>
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
-                <div><p class="text-sm font-medium text-gray-600">Avg. FCR</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgFcr ?? 0, 3) }}</p></div>
+                <div><p class="text-sm font-medium text-gray-600">Avg. cFCR</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgFcr ?? 0, 3) }}</p></div>
                 <div class="w-12 h-12 rounded-lg bg-blue-500 flex items-center justify-center"><i class="fas fa-chart-line text-white text-xl"></i></div>
             </div>
             @php
@@ -43,29 +42,26 @@
                 $fcrStatusClass = $avgFcrValue < 1.8 ? 'text-green-600' : ($avgFcrValue < 2.0 ? 'text-yellow-600' : 'text-red-600');
                 $fcrStatusText = $avgFcrValue < 1.8 ? 'Excellent' : ($avgFcrValue < 2.0 ? 'Good' : 'Needs Improvement');
             @endphp
-            <div class="mt-4 text-sm {{ $fcrStatusClass }}">
-                {{ $fcrStatusText }}
-            </div>
+            <div class="mt-4 text-sm {{ $fcrStatusClass }}">{{ $fcrStatusText }}</div>
         </div>
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
                 <div><p class="text-sm font-medium text-gray-600">Avg. Mortality</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgMortality ?? 0, 1) }}%</p></div>
                 @php
-                $avgMortalityValue = $avgMortality ?? 0;
-                $mortalityBadgeClass = $avgMortalityValue < 5 ? 'bg-green-500' : ($avgMortalityValue < 8 ? 'bg-yellow-500' : 'bg-red-500');
-            @endphp
-            <div class="w-12 h-12 rounded-lg {{ $mortalityBadgeClass }} flex items-center justify-center">
+                    $avgMortalityValue = $avgMortality ?? 0;
+                    $mortalityBadgeClass = $avgMortalityValue < 5 ? 'bg-green-500' : ($avgMortalityValue < 8 ? 'bg-yellow-500' : 'bg-red-500');
+                @endphp
+                <div class="w-12 h-12 rounded-lg {{ $mortalityBadgeClass }} flex items-center justify-center">
                     <i class="fas fa-chart-pie text-white text-xl"></i>
                 </div>
             </div>
-            <div class="mt-4 text-sm text-gray-500">Target: < 5%</div>
+            <div class="mt-4 text-sm text-gray-500">Target: &lt; 5%</div>
         </div>
     </div>
 
-    <!-- Charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-6">FCR Trend Over Time</h3>
+            <h3 class="text-lg font-semibold text-gray-900 mb-6">FCR per Recent Batch</h3>
             <div style="height: 300px;"><canvas id="fcrTrendChart"></canvas></div>
         </div>
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -74,7 +70,6 @@
         </div>
     </div>
 
-    <!-- Performance Table -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200">
             <h3 class="text-lg font-semibold text-gray-900">Recent Batch Performance</h3>
@@ -86,7 +81,8 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Age</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">FCR</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">iFCR</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">cFCR</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mortality</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit %</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Performance</th>
@@ -99,29 +95,28 @@
                         <td class="px-6 py-4">{!! batch_status_badge($perf['status'] ?? 'unknown') !!}</td>
                         <td class="px-6 py-4 text-sm">{{ $perf['age'] ?? 0 }} days</td>
                         <td class="px-6 py-4 text-sm {{ ($perf['ifcr'] ?? 0) < 1.8 ? 'text-green-600' : 'text-yellow-600' }}">{{ number_format($perf['ifcr'] ?? 0, 3) }}</td>
+                        <td class="px-6 py-4 text-sm {{ ($perf['cfcr'] ?? 0) < 1.8 ? 'text-green-600' : 'text-yellow-600' }}">{{ number_format($perf['cfcr'] ?? 0, 3) }}</td>
                         <td class="px-6 py-4 text-sm {{ ($perf['mortality'] ?? 0) < 5 ? 'text-green-600' : 'text-red-600' }}">{{ number_format($perf['mortality'] ?? 0, 1) }}%</td>
                         <td class="px-6 py-4 text-sm {{ ($perf['profit_percent'] ?? 0) > 20 ? 'text-green-600' : 'text-yellow-600' }}">{{ number_format($perf['profit_percent'] ?? 0, 1) }}%</td>
                         <td class="px-6 py-4">
                             @php
                                 $profitPercent = (float) ($perf['profit_percent'] ?? 0);
-                                $performanceScore = (($profitPercent + 20) / 2);
+                                $performanceScore = min(max((($profitPercent + 20) / 2), 0), 100);
                                 $performanceClass = $performanceScore > 70 ? 'bg-green-500' : ($performanceScore > 50 ? 'bg-yellow-500' : 'bg-red-500');
                             @endphp
                             <div class="w-24 bg-gray-200 rounded-full h-2">
-                                <div class="h-2 rounded-full {{ $performanceClass }}"
-                                     style="width: {{ min($performanceScore, 100) }}%"></div>
+                                <div class="h-2 rounded-full {{ $performanceClass }}" style="width: {{ $performanceScore }}%"></div>
                             </div>
                         </td>
                     </tr>
                     @empty
-                    <tr><td colspan="7" class="px-6 py-12 text-center text-gray-500">No performance data available</td></tr>
+                    <tr><td colspan="8" class="px-6 py-12 text-center text-gray-500">No performance data available</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
     </div>
 
-    <!-- Insights -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Performers</h3>
@@ -139,7 +134,10 @@
             @forelse($improvementAreas ?? [] as $area)
             <div class="p-3 bg-red-50 rounded-lg border border-red-100 mb-2">
                 <p class="text-sm font-medium text-gray-900">{{ $area['batch'] ?? 'Batch' }}</p>
-                <p class="text-xs text-red-600">{{ $area['issue'] ?? 'Needs attention' }}</p>
+                <p class="text-xs text-red-600">
+                    @if(($area['mortality'] ?? 0) > 8) High mortality ({{ number_format($area['mortality'], 1) }}%) @endif
+                    @if(($area['profit_percent'] ?? 0) < 5 && ($area['profit_percent'] ?? 0) < 5) Low profit ({{ number_format($area['profit_percent'], 1) }}%) @endif
+                </p>
             </div>
             @empty
             <p class="text-sm text-gray-500">All batches performing well</p>
@@ -165,18 +163,38 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const fcrData = @json($fcrChart ?? ['labels' => [], 'ifcr' => [], 'cfcr' => []]);
+    const mortalityBuckets = @json($mortalityBuckets ?? []);
+
     const fcrCtx = document.getElementById('fcrTrendChart');
     if (fcrCtx) {
         new Chart(fcrCtx, {
-            type: 'line',
+            type: 'bar',
             data: {
-                labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
+                labels: fcrData.labels.length ? fcrData.labels : ['No Data'],
                 datasets: [
-                    { label: 'Average iFCR', data: [1.2, 1.4, 1.6, 1.7, 1.8, 1.85, 1.9, 1.95], borderColor: '#3b82f6', tension: 0.4 },
-                    { label: 'Target FCR', data: [1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8], borderColor: '#10b981', borderDash: [5,5], pointRadius: 0 }
+                    {
+                        label: 'iFCR',
+                        data: fcrData.ifcr.length ? fcrData.ifcr : [0],
+                        backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: 'cFCR',
+                        data: fcrData.cfcr.length ? fcrData.cfcr : [0],
+                        backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                        borderColor: 'rgb(239, 68, 68)',
+                        borderWidth: 1,
+                    }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false, min: 1.0 } } }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, title: { display: true, text: 'FCR' } } },
+                plugins: { legend: { position: 'top' } }
+            }
         });
     }
 
@@ -185,8 +203,12 @@ document.addEventListener('DOMContentLoaded', function() {
         new Chart(mortalityCtx, {
             type: 'bar',
             data: {
-                labels: ['< 3%', '3-5%', '5-8%', '8-10%', '> 10%'],
-                datasets: [{ label: 'Number of Batches', data: [5, 8, 4, 2, 1], backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#ef4444'] }]
+                labels: Object.keys(mortalityBuckets),
+                datasets: [{
+                    label: 'Number of Batches',
+                    data: Object.values(mortalityBuckets),
+                    backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#ef4444']
+                }]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });

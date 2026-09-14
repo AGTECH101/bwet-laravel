@@ -23,25 +23,25 @@ class ExportController extends Controller
         Gate::authorize('export');
 
         $request->validate([
-            'export_type' => 'required|in:batch,database,analytics,financial',
+            'export_type'     => 'required|in:batch,database,analytics,financial',
             'report_template' => 'required|string',
-            'format' => 'required|in:excel,csv,pdf',
-            'batch_id' => 'nullable|exists:poultry_batches,id',
-            'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date|after_or_equal:date_from',
-            'quick' => 'nullable|string|in:all_batches,current_month,performance,financial,inventory',
+            'format'          => 'required|in:excel,csv',
+            'batch_id'        => 'nullable|exists:poultry_batches,id',
+            'date_from'       => 'nullable|date',
+            'date_to'         => 'nullable|date|after_or_equal:date_from',
+            'quick'           => 'nullable|string|in:all_batches,current_month,performance,financial,inventory',
         ]);
 
         $reportTemplate = $request->input('report_template', $request->input('quick') ?: 'farm-overview');
 
         if ($request->filled('quick')) {
             $reportTemplate = match ($request->quick) {
-                'all_batches' => 'farm-overview',
+                'all_batches'   => 'farm-overview',
                 'current_month' => 'monthly-operations',
-                'performance' => 'performance',
-                'financial' => 'financial-summary',
-                'inventory' => 'inventory-summary',
-                default => $reportTemplate,
+                'performance'   => 'performance',
+                'financial'     => 'financial-summary',
+                'inventory'     => 'inventory-summary',
+                default         => $reportTemplate,
             };
         }
 

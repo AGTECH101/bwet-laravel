@@ -10,11 +10,13 @@ class WeightRecord extends Model
 {
     use HasFactory;
 
+    protected $table = 'weight_records';
+
     protected $fillable = [
         'poultry_batch_id', 'date', 'individual_weights', 'birds_weighed',
         'total_weight', 'average_weight', 'coefficient_variation',
         'cv_status', 'is_valid_sample', 'expected_weight', 'notes',
-        'recorded_by_id'
+        'recorded_by_id',
     ];
 
     protected $casts = [
@@ -37,6 +39,19 @@ class WeightRecord extends Model
         return $this->belongsTo(User::class, 'recorded_by_id');
     }
 
+    /**
+     * Compute metrics from individual_weights.
+     *
+     * CV policy:
+     *   < 10  → 'excellent'  (badge: green)
+     *   < 12  → 'caution'    (badge: blue)
+     *   < 15  → 'warning'    (badge: yellow)
+     *   >= 15 → 'high'       (badge: orange, warning flash on store/update)
+     *
+     * Every record is flagged is_valid_sample = true so downstream
+     * metrics (average weight, FCR, batch calculations) use it
+     * regardless of variation.
+     */
     public function calculateMetrics(): void
     {
         $weights = is_array($this->individual_weights) ? $this->individual_weights : [];
@@ -49,33 +64,29 @@ class WeightRecord extends Model
         $this->total_weight = array_sum($weights);
         $this->average_weight = $this->total_weight / $num;
 
-        $mean = $this->average_weight;
+        $mean = (float) $this->average_weight;
         $variance = array_sum(array_map(fn ($w) => ($w - $mean) ** 2, $weights)) / $num;
         $stddev = sqrt($variance);
         $cv = $mean > 0 ? ($stddev / $mean) * 100 : 0;
         $this->coefficient_variation = round($cv, 2);
 
         if ($cv >= 15) {
-            $this->cv_status = 'rejected';
-            $this->is_valid_sample = false;
-            return;
+            $this->cv_status = 'high';
         } elseif ($cv >= 12) {
             $this->cv_status = 'warning';
-            $this->is_valid_sample = true;
         } elseif ($cv >= 10) {
             $this->cv_status = 'caution';
-            $this->is_valid_sample = true;
         } else {
             $this->cv_status = 'excellent';
-            $this->is_valid_sample = true;
         }
 
+        $this->is_valid_sample = true;
         $this->expected_weight = $this->calculateExpectedWeight();
     }
 
     protected function calculateExpectedWeight(): float
     {
-        $age = $this->batch?->current_age_days ?? 0;
+        $age = $this->batch?->age_days ?? 0;
 
         if ($age <= 0) {
             return 0.045;

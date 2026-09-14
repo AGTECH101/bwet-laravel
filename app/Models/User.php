@@ -14,7 +14,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name', 'email', 'password', 'role', 'phone', 'farm_location',
-        'is_approved', 'approved_by_id', 'approved_at'
+        'is_approved', 'is_active', 'approved_by_id', 'approved_at'
     ];
 
     protected $hidden = ['password', 'remember_token', 'two_factor_recovery_codes', 'two_factor_secret'];
@@ -22,6 +22,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'is_approved' => 'boolean',
+        'is_active' => 'boolean',
         'approved_at' => 'datetime',
     ];
 
@@ -46,7 +47,6 @@ class User extends Authenticatable
         return $this->hasMany(NotificationReadStatus::class);
     }
 
-    // Relationships to poultry models (if needed)
     public function createdBatches()
     {
         return $this->hasMany(Poultry\Batch::class, 'created_by_id');

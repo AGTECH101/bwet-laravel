@@ -24,7 +24,6 @@
 
 @section('content')
 <div class="space-y-6">
-    <!-- KPI Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-white rounded-lg shadow p-4 border border-gray-200">
             <div class="text-gray-500 text-sm font-medium">Average Weight</div>
@@ -48,7 +47,6 @@
         </div>
     </div>
 
-    <!-- Charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Weight Progression</h3>
@@ -60,7 +58,6 @@
         </div>
     </div>
 
-    <!-- Data Table -->
     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200">
             <h3 class="text-lg font-semibold text-gray-900">Historical Data</h3>
@@ -89,7 +86,7 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const batchId = '{{ $batch->id }}';
+const chartDataUrl = @json(route('poultry.api.chart-data', ['batch' => $batch->id]));
 let weightChart, fcrChart;
 let refreshInterval;
 
@@ -119,8 +116,16 @@ function initializeCharts() {
 }
 
 function fetchData() {
-    fetch(`/api/batches/${batchId}/chart-data/`)
-        .then(r => r.json())
+    fetch(chartDataUrl, {
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+        .then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
         .then(data => {
             updateCharts(data);
             updateKPIs(data);
@@ -145,11 +150,11 @@ function updateCharts(data) {
 }
 
 function updateKPIs(data) {
-    document.getElementById('kpiWeight').textContent = data.current_weight ? data.current_weight.toFixed(3) + ' kg' : '--';
-    document.getElementById('kpiIfcr').textContent = data.current_ifcr ? data.current_ifcr.toFixed(3) : '--';
-    document.getElementById('kpiCfcr').textContent = data.current_cfcr ? data.current_cfcr.toFixed(3) : '--';
-    document.getElementById('kpiMortality').textContent = data.current_mortality ? data.current_mortality.toFixed(2) + '%' : '--';
-    document.getElementById('kpiAdg').textContent = data.current_adg ? data.current_adg.toFixed(3) : '--';
+    document.getElementById('kpiWeight').textContent = data.current_weight ? Number(data.current_weight).toFixed(3) + ' kg' : '--';
+    document.getElementById('kpiIfcr').textContent = data.current_ifcr ? Number(data.current_ifcr).toFixed(3) : '--';
+    document.getElementById('kpiCfcr').textContent = data.current_cfcr ? Number(data.current_cfcr).toFixed(3) : '--';
+    document.getElementById('kpiMortality').textContent = data.current_mortality ? Number(data.current_mortality).toFixed(2) + '%' : '--';
+    document.getElementById('kpiAdg').textContent = data.current_adg ? Number(data.current_adg).toFixed(3) : '--';
 }
 
 function updateTable(data) {
@@ -162,11 +167,11 @@ function updateTable(data) {
         <tr>
             <td class="px-6 py-3 text-sm">${row.date || '-'}</td>
             <td class="px-6 py-3 text-sm">${row.age || '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.weight ? row.weight.toFixed(3) : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.ifcr ? row.ifcr.toFixed(3) : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.cfcr ? row.cfcr.toFixed(3) : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.mortality ? row.mortality.toFixed(2) + '%' : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.adg ? row.adg.toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.weight ? Number(row.weight).toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.ifcr ? Number(row.ifcr).toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.cfcr ? Number(row.cfcr).toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.mortality ? Number(row.mortality).toFixed(2) + '%' : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.adg ? Number(row.adg).toFixed(3) : '-'}</td>
         </tr>
     `).join('');
 }
@@ -189,7 +194,6 @@ function manualRefresh() {
     fetchData();
 }
 
-// Clean up interval on page leave
 document.addEventListener('beforeunload', function() {
     if (refreshInterval) clearInterval(refreshInterval);
 });

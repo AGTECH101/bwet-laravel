@@ -69,7 +69,7 @@
             <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div><p class="text-xs text-gray-600">Birds Weighed</p><p class="text-2xl font-bold text-gray-900" id="birdsCount">{{ count($weights) }}</p></div>
-                    <div><p class="text-xs text-gray-600">Total Weight</p><p class="text-2xl font-bold text-gray-900"><span id="totalWeight">{{ number_format(array_sum($weights), 3) }}</span> kg</p></div>
+                    <div><p class="text-xs text-gray-600">Total Weight</p><p class="text-2xl font-bold text-gray-900"><span id="totalWeight">{{ count($weights) > 0 ? number_format(array_sum($weights), 3) : '0.000' }}</span> kg</p></div>
                     <div><p class="text-xs text-gray-600">Average Weight</p><p class="text-2xl font-bold text-blue-600"><span id="avgWeight">{{ count($weights) > 0 ? number_format(array_sum($weights)/count($weights), 3) : '0.000' }}</span> kg</p></div>
                     <div><p class="text-xs text-gray-600">CV</p><p class="text-2xl font-bold" id="cvPercent"><span id="cvValue">{{ number_format($weightRecord->coefficient_variation, 2) }}</span>%</p></div>
                 </div>
@@ -114,6 +114,7 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('weightForm');
     const inputs = document.querySelectorAll('.bird-weight-input');
     const batchSelect = document.getElementById('poultry_batch_id');
 
@@ -125,12 +126,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function calculateStats() {
-        let weights = [];
+    function collectWeights() {
+        const weights = [];
         inputs.forEach(input => {
             const val = parseFloat(input.value);
             if (!isNaN(val) && val > 0) weights.push(val);
         });
+        return weights;
+    }
+
+    function calculateStats() {
+        const weights = collectWeights();
         const count = weights.length;
         document.getElementById('birdsCount').textContent = count;
 
@@ -188,16 +194,24 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBatchInfo();
     calculateStats();
 
-    document.getElementById('weightForm').addEventListener('submit', function(e) {
-        let hasValid = false;
-        inputs.forEach(input => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && val > 0) hasValid = true;
-        });
-        if (!hasValid) {
+    form.addEventListener('submit', function(e) {
+        form.querySelectorAll('input[data-weight-aggregator]').forEach(el => el.remove());
+
+        const weights = collectWeights();
+        if (weights.length === 0) {
             e.preventDefault();
             alert('Please enter at least one valid bird weight.');
+            return;
         }
+
+        weights.forEach(w => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'individual_weights[]';
+            hidden.value = w;
+            hidden.setAttribute('data-weight-aggregator', '1');
+            form.appendChild(hidden);
+        });
     });
 });
 </script>

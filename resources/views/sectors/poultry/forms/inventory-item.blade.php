@@ -51,9 +51,13 @@
                         <option value="l" {{ old('unit') == 'l' ? 'selected' : '' }}>Liter (l)</option>
                         <option value="ml" {{ old('unit') == 'ml' ? 'selected' : '' }}>Milliliter (ml)</option>
                         <option value="unit" {{ old('unit') == 'unit' ? 'selected' : '' }}>Unit</option>
-                        <option value="bag" {{ old('unit') == 'bag' ? 'selected' : '' }}>Bag</option>
+                        <option value="bag" {{ old('unit') == 'bag' ? 'selected' : '' }}>Bag (25 kg)</option>
                         <option value="box" {{ old('unit') == 'box' ? 'selected' : '' }}>Box</option>
                     </select>
+                    <p class="mt-1 text-xs text-gray-500" id="bagHint" style="display: none;">
+                        <i class="fas fa-info-circle text-blue-500"></i>
+                        Bags are converted to kg on save (1 bag = 25 kg). Enter cost per bag — we'll divide it by 25.
+                    </p>
                     @error('unit') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                 </div>
             </div>
@@ -62,6 +66,7 @@
                 <div>
                     <label for="quantity_in_stock" class="block text-sm font-medium text-gray-700">Initial Stock <span class="text-red-500">*</span></label>
                     <input type="number" name="quantity_in_stock" id="quantity_in_stock" value="{{ old('quantity_in_stock', 0) }}" step="0.001" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" required>
+                    <p class="mt-1 text-xs text-gray-500" id="stockUnitLabel">In the selected unit</p>
                     @error('quantity_in_stock') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                 </div>
                 <div>
@@ -101,16 +106,19 @@
 document.addEventListener('DOMContentLoaded', function() {
     const unitSelect = document.getElementById('unit');
     const categorySelect = document.getElementById('category');
+    const bagHint = document.getElementById('bagHint');
+    const stockUnitLabel = document.getElementById('stockUnitLabel');
 
+    // Category → allowed units filtering.
     function updateUnitOptions() {
         const category = categorySelect.value;
         const units = {
-            'feed': ['kg', 'bag'],
-            'vaccine': ['unit', 'ml'],
-            'medicine': ['kg', 'g', 'ml', 'unit'],
+            'feed':        ['kg', 'bag'],
+            'vaccine':     ['unit', 'ml'],
+            'medicine':    ['kg', 'g', 'ml', 'unit'],
             'consumables': ['unit', 'box'],
-            'packaging': ['box', 'unit'],
-            'other': ['kg', 'g', 'l', 'ml', 'unit', 'bag', 'box']
+            'packaging':   ['box', 'unit'],
+            'other':       ['kg', 'g', 'l', 'ml', 'unit', 'bag', 'box']
         };
 
         const allowed = units[category] || ['kg', 'g', 'l', 'ml', 'unit', 'bag', 'box'];
@@ -123,30 +131,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    categorySelect.addEventListener('change', updateUnitOptions);
-    updateUnitOptions();
+    function updateBagHint() {
+        const isBag = unitSelect.value === 'bag';
+        bagHint.style.display = isBag ? 'block' : 'none';
+        stockUnitLabel.textContent = isBag
+            ? 'In bags (will be converted to kg on save)'
+            : 'In the selected unit';
+    }
 
-    // Auto-convert bag to kg if feed selected
-    const form = document.querySelector('form');
-    form.addEventListener('submit', function(e) {
-        const category = categorySelect.value;
-        const unit = unitSelect.value;
-        if (category === 'feed' && unit === 'bag') {
-            const stockInput = document.getElementById('quantity_in_stock');
-            const minInput = document.getElementById('minimum_quantity');
-            const costInput = document.getElementById('cost_per_unit');
-            if (stockInput.value && parseFloat(stockInput.value) > 0) {
-                stockInput.value = parseFloat(stockInput.value) * 25;
-            }
-            if (minInput.value && parseFloat(minInput.value) > 0) {
-                minInput.value = parseFloat(minInput.value) * 25;
-            }
-            if (costInput.value && parseFloat(costInput.value) > 0) {
-                costInput.value = parseFloat(costInput.value) / 25;
-            }
-            unitSelect.value = 'kg';
-        }
-    });
+    categorySelect.addEventListener('change', updateUnitOptions);
+    unitSelect.addEventListener('change', updateBagHint);
+    updateUnitOptions();
+    updateBagHint();
 });
 </script>
 @endpush

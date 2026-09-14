@@ -1,200 +1,119 @@
 <?php
 
-use Illuminate\Support\Str;
-use App\Models\Poultry\Batch;
+use App\Models\Sector;
+
+// ============================================================
+// SECTOR HELPERS
+// ============================================================
+
+if (!function_exists('sector_id')) {
+    function sector_id(string $slug): ?int
+    {
+        static $cache = [];
+        if (!array_key_exists($slug, $cache)) {
+            $cache[$slug] = Sector::where('slug', $slug)->value('id');
+        }
+        return $cache[$slug];
+    }
+}
+
+// ============================================================
+// FORMATTING HELPERS
+// ============================================================
 
 if (!function_exists('format_currency')) {
-    function format_currency($value, $default = '₦0.00')
+    function format_currency($amount, $symbol = '₦'): string
     {
-        if (is_null($value) || $value === '') {
-            return $default;
-        }
-        try {
-            $amount = floatval($value);
-            return '₦' . number_format($amount, 2);
-        } catch (\Exception $e) {
-            return $default;
-        }
+        return $symbol . number_format((float) $amount, 2);
     }
 }
 
 if (!function_exists('format_weight')) {
-    function format_weight($value, $default = '0.000 kg')
+    function format_weight($kg, $unit = 'kg'): string
     {
-        if (is_null($value) || $value === '') {
-            return $default;
-        }
-        try {
-            $weight = floatval($value);
-            return number_format($weight, 3) . ' kg';
-        } catch (\Exception $e) {
-            return $default;
-        }
-    }
-}
-
-if (!function_exists('format_percentage')) {
-    function format_percentage($value, $decimals = 1, $default = '0%')
-    {
-        if (is_null($value) || $value === '') {
-            return $default;
-        }
-        try {
-            $percent = floatval($value);
-            return number_format($percent, $decimals) . '%';
-        } catch (\Exception $e) {
-            return $default;
-        }
+        return number_format((float) $kg, 3) . ' ' . $unit;
     }
 }
 
 if (!function_exists('format_fcr')) {
-    function format_fcr($value, $decimals = 3, $default = '0.000')
+    function format_fcr($fcr): string
     {
-        if (is_null($value) || $value === '') {
-            return $default;
-        }
-        try {
-            $fcr = floatval($value);
-            return number_format($fcr, $decimals);
-        } catch (\Exception $e) {
-            return $default;
-        }
+        return number_format((float) $fcr, 3);
     }
 }
 
-if (!function_exists('format_date')) {
-    function format_date($date, $format = 'd M Y')
+if (!function_exists('format_percentage')) {
+    function format_percentage($value, $decimals = 2): string
     {
-        if (!$date) {
-            return 'N/A';
-        }
-        if ($date instanceof \DateTimeInterface) {
-            return $date->format($format);
-        }
-        try {
-            return \Carbon\Carbon::parse($date)->format($format);
-        } catch (\Exception $e) {
-            return 'Invalid date';
-        }
+        return number_format((float) $value, $decimals) . '%';
     }
 }
 
-// Badge helpers (return HTML)
+// ============================================================
+// BADGE HELPERS
+// ============================================================
+
 if (!function_exists('batch_status_badge')) {
-    function batch_status_badge($status)
+    function batch_status_badge(?string $status): string
     {
-        $classes = [
-            'active' => 'bg-green-100 text-green-800',
-            'closed' => 'bg-gray-100 text-gray-800',
-            'completed' => 'bg-blue-100 text-blue-800',
-        ];
-        $label = ucfirst($status);
-        $class = $classes[$status] ?? 'bg-gray-100 text-gray-800';
-        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
-    }
-}
+        $status = strtolower((string) $status);
 
-if (!function_exists('priority_badge')) {
-    function priority_badge($priority)
-    {
-        $classes = [
-            'critical' => 'bg-red-100 text-red-800',
-            'high' => 'bg-orange-100 text-orange-800',
-            'medium' => 'bg-yellow-100 text-yellow-800',
-            'low' => 'bg-blue-100 text-blue-800',
-        ];
-        $label = ucfirst($priority);
-        $class = $classes[$priority] ?? 'bg-gray-100 text-gray-800';
-        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
-    }
-}
-
-if (!function_exists('observation_status_badge')) {
-    function observation_status_badge($status)
-    {
-        $classes = [
-            'pending' => 'bg-yellow-100 text-yellow-800',
-            'reviewed' => 'bg-blue-100 text-blue-800',
-            'resolved' => 'bg-green-100 text-green-800',
-            'closed' => 'bg-gray-100 text-gray-800',
-            'action_taken' => 'bg-purple-100 text-purple-800',
-        ];
-        $label = ucfirst(str_replace('_', ' ', $status));
-        $class = $classes[$status] ?? 'bg-gray-100 text-gray-800';
-        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+        return match ($status) {
+            'active'    => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">Active</span>',
+            'closed'    => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">Closed</span>',
+            'completed' => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">Completed</span>',
+            default     => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">' . ucfirst($status ?: 'Unknown') . '</span>',
+        };
     }
 }
 
 if (!function_exists('cv_status_badge')) {
-    function cv_status_badge($status)
+    /**
+     * Badge for CV status. 'high' is a warning badge (not an error).
+     * 'rejected' is kept as an alias for legacy data.
+     */
+    function cv_status_badge(?string $status): string
     {
-        $classes = [
-            'excellent' => 'bg-green-100 text-green-800',
-            'caution' => 'bg-yellow-100 text-yellow-800',
-            'warning' => 'bg-orange-100 text-orange-800',
-            'rejected' => 'bg-red-100 text-red-800',
-        ];
-        $label = ucfirst($status);
-        $class = $classes[$status] ?? 'bg-gray-100 text-gray-800';
-        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+        $status = strtolower((string) $status);
+
+        return match ($status) {
+            'excellent' => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">✅ Excellent</span>',
+            'caution'   => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">✓ Good</span>',
+            'warning'   => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">⚠️ Caution</span>',
+            'high'      => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800">⚠️ High Variation</span>',
+            'rejected'  => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800">⚠️ High Variation</span>',
+            default     => '<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">' . ucfirst($status ?: 'Unknown') . '</span>',
+        };
     }
 }
 
-if (!function_exists('notification_type_badge')) {
-    function notification_type_badge($type)
+if (!function_exists('observation_status_badge')) {
+    function observation_status_badge(?string $status): string
     {
-        $classes = [
-            'weighing_day' => 'bg-blue-100 text-blue-800',
-            'missed_weighing' => 'bg-yellow-100 text-yellow-800',
-            'low_stock' => 'bg-red-100 text-red-800',
-            'batch_closed' => 'bg-green-100 text-green-800',
-            'system' => 'bg-gray-100 text-gray-800',
-            'slaughter_trigger' => 'bg-red-100 text-red-800',
-            'observation_report' => 'bg-purple-100 text-purple-800',
-            'manual_mode' => 'bg-orange-100 text-orange-800',
-        ];
-        $label = ucfirst(str_replace('_', ' ', $type));
-        $class = $classes[$type] ?? 'bg-gray-100 text-gray-800';
-        return "<span class=\"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {$class}\">{$label}</span>";
+        $status = strtolower((string) $status);
+
+        return match ($status) {
+            'pending'      => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>',
+            'reviewed'     => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Reviewed</span>',
+            'action_taken' => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Action Taken</span>',
+            'resolved'     => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Resolved</span>',
+            'closed'       => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Closed</span>',
+            default        => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">' . ucfirst($status ?: 'Unknown') . '</span>',
+        };
     }
 }
 
-if (!function_exists('days_since')) {
-    function days_since($date)
+if (!function_exists('priority_badge')) {
+    function priority_badge(?string $priority): string
     {
-        if (!$date) {
-            return 'N/A';
-        }
-        try {
-            $carbon = \Carbon\Carbon::parse($date);
-            return $carbon->diffForHumans();
-        } catch (\Exception $e) {
-            return 'N/A';
-        }
-    }
-}
+        $priority = strtolower((string) $priority);
 
-// Calculate percentage of total
-if (!function_exists('percentage_of')) {
-    function percentage_of($part, $total, $decimals = 1)
-    {
-        if ($total == 0) {
-            return 0;
-        }
-        return round(($part / $total) * 100, $decimals);
-    }
-}
-
-if (!function_exists('sector_id')) {
-    function sector_id(string $slug): int
-    {
-        static $cache = [];
-        if (isset($cache[$slug])) {
-            return $cache[$slug];
-        }
-        $sector = \App\Models\Sector::where('slug', $slug)->first();
-        $cache[$slug] = $sector?->id ?? 0;
-        return $cache[$slug];
+        return match ($priority) {
+            'low'      => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Low</span>',
+            'medium'   => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Medium</span>',
+            'high'     => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">High</span>',
+            'critical' => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Critical</span>',
+            default    => '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">' . ucfirst($priority ?: 'Unknown') . '</span>',
+        };
     }
 }

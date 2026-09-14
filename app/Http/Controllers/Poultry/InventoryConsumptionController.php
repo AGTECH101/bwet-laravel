@@ -81,17 +81,14 @@ class InventoryConsumptionController extends Controller
             ]);
         }
 
-        $data['recorded_by_id'] = auth()->id();
-        $data['source_type'] = 'manual';
+        $data['recorded_by_id']    = auth()->id();
+        $data['source_type']       = 'manual';
         $data['unit_cost_at_time'] = $item->cost_per_unit;
-        $data['total_cost'] = (float) $data['quantity_used'] * (float) $item->cost_per_unit;
+        $data['total_cost']        = (float) $data['quantity_used'] * (float) $item->cost_per_unit;
 
-        DB::transaction(function () use ($data, $item, $batch) {
+        DB::transaction(function () use ($data, $batch) {
+            // Stock deduction happens exclusively via InventoryConsumptionObserver.
             InventoryConsumption::create($data);
-
-            $item->quantity_in_stock -= $data['quantity_used'];
-            $item->quantity_used += $data['quantity_used'];
-            $item->save();
 
             if ($batch) {
                 BatchRecalculationService::recalculateAll($batch);
@@ -120,11 +117,11 @@ class InventoryConsumptionController extends Controller
 
         $validated = $request->validate([
             'inventory_item_id' => ['required', 'exists:inventory_items,id'],
-            'poultry_batch_id' => ['nullable', 'exists:poultry_batches,id'],
-            'quantity_used' => ['required', 'numeric', 'min:0.001'],
-            'date' => ['required', 'date'],
-            'reason' => ['required', 'string', 'max:255'],
-            'notes' => ['required', 'string', 'min:20', 'max:1500'],
+            'poultry_batch_id'  => ['nullable', 'exists:poultry_batches,id'],
+            'quantity_used'     => ['required', 'numeric', 'min:0.001'],
+            'date'              => ['required', 'date'],
+            'reason'            => ['required', 'string', 'max:255'],
+            'notes'             => ['required', 'string', 'min:20', 'max:1500'],
         ]);
 
         $batch = null;
@@ -140,17 +137,14 @@ class InventoryConsumptionController extends Controller
             return back()->withInput()->withErrors(['quantity_used' => 'Waste quantity cannot exceed the current stock on hand.']);
         }
 
-        $validated['recorded_by_id'] = auth()->id();
-        $validated['source_type'] = 'waste';
+        $validated['recorded_by_id']    = auth()->id();
+        $validated['source_type']       = 'waste';
         $validated['unit_cost_at_time'] = $item->cost_per_unit;
-        $validated['total_cost'] = 0;
+        $validated['total_cost']        = 0;
 
-        DB::transaction(function () use ($validated, $item, $batch) {
+        DB::transaction(function () use ($validated, $batch) {
+            // Stock deduction happens exclusively via InventoryConsumptionObserver.
             InventoryConsumption::create($validated);
-
-            $item->quantity_in_stock -= $validated['quantity_used'];
-            $item->quantity_used += $validated['quantity_used'];
-            $item->save();
 
             if ($batch) {
                 BatchRecalculationService::recalculateAll($batch);
@@ -166,16 +160,11 @@ class InventoryConsumptionController extends Controller
         Gate::authorize('delete', $consumption);
 
         $itemId = $consumption->inventory_item_id;
-        $batch = $consumption->batch;
+        $batch  = $consumption->batch;
 
-        DB::transaction(function () use ($consumption, $itemId, $batch) {
-            $item = InventoryItem::find($itemId);
-            if ($item) {
-                $item->quantity_in_stock += $consumption->quantity_used;
-                $item->quantity_used -= $consumption->quantity_used;
-                $item->save();
-            }
-
+        DB::transaction(function () use ($consumption, $batch) {
+            // Deleting fires InventoryConsumptionObserver::deleted,
+            // which restores stock exactly once.
             $consumption->delete();
 
             if ($batch && $batch->exists) {

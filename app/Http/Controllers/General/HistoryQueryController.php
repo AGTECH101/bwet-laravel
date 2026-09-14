@@ -8,6 +8,7 @@ use App\Models\Poultry\Batch;
 use App\Models\User;
 use App\Services\HistoryQueryService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class HistoryQueryController extends Controller
 {
@@ -41,7 +42,7 @@ class HistoryQueryController extends Controller
         $result = HistoryQueryService::execute($data);
 
         if (!empty($data['name'])) {
-            $query = HistoryQuery::create([
+            HistoryQuery::create([
                 'name' => $data['name'],
                 'query_type' => $data['query_type'],
                 'date_from' => $data['date_from'] ?? null,
@@ -67,7 +68,6 @@ class HistoryQueryController extends Controller
     public function show(HistoryQuery $historyQuery)
     {
         Gate::authorize('view', $historyQuery);
-        // Re-run the query
         $data = $historyQuery->toArray();
         $result = HistoryQueryService::execute($data);
         return view('general.history.show', compact('historyQuery', 'result'));

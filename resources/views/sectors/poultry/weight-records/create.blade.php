@@ -97,6 +97,7 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('weightForm');
     const inputs = document.querySelectorAll('.bird-weight-input');
     const batchSelect = document.getElementById('poultry_batch_id');
 
@@ -114,12 +115,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function calculateStats() {
-        let weights = [];
+    function collectWeights() {
+        const weights = [];
         inputs.forEach(input => {
             const val = parseFloat(input.value);
             if (!isNaN(val) && val > 0) weights.push(val);
         });
+        return weights;
+    }
+
+    function calculateStats() {
+        const weights = collectWeights();
         const count = weights.length;
         document.getElementById('birdsCount').textContent = count;
 
@@ -173,16 +179,28 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBatchInfo();
     calculateStats();
 
-    document.getElementById('weightForm').addEventListener('submit', function(e) {
-        let hasValid = false;
-        inputs.forEach(input => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && val > 0) hasValid = true;
-        });
-        if (!hasValid) {
+    // Build the individual_weights[] array on submit.
+    // The named inputs (weight_1..weight_10) never reach the server as-is;
+    // we convert them into the array format the FormRequest expects.
+    form.addEventListener('submit', function(e) {
+        // Remove any previous hidden inputs from a failed submission attempt.
+        form.querySelectorAll('input[data-weight-aggregator]').forEach(el => el.remove());
+
+        const weights = collectWeights();
+        if (weights.length === 0) {
             e.preventDefault();
             alert('Please enter at least one valid bird weight.');
+            return;
         }
+
+        weights.forEach(w => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'individual_weights[]';
+            hidden.value = w;
+            hidden.setAttribute('data-weight-aggregator', '1');
+            form.appendChild(hidden);
+        });
     });
 });
 </script>

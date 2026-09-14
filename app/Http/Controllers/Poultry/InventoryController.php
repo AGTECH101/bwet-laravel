@@ -66,51 +66,51 @@ class InventoryController extends Controller
         $validated['created_by_id'] = auth()->id();
         $validated['status'] = 'active';
 
-        $item = InventoryItem::create($validated);
+        $inventory = InventoryItem::create($validated);
 
-        return redirect()->route('poultry.inventory.show', $item)
+        return redirect()->route('poultry.inventory.show', $inventory)
             ->with('success', 'Inventory item created successfully.');
     }
 
-    public function show(InventoryItem $item)
+    public function show(InventoryItem $inventory)
     {
-        Gate::authorize('view', $item);
+        Gate::authorize('view', $inventory);
 
-        $consumptionHistory = $item->consumptions()
+        $consumptionHistory = $inventory->consumptions()
             ->with('batch', 'recordedBy')
             ->latest('date')
             ->limit(20)
             ->get();
 
-        return view('sectors.poultry.inventory.show', compact('item', 'consumptionHistory'));
+        return view('sectors.poultry.inventory.show', compact('inventory', 'consumptionHistory'));
     }
 
-    public function edit(InventoryItem $item)
+    public function edit(InventoryItem $inventory)
     {
-        Gate::authorize('update', $item);
+        Gate::authorize('update', $inventory);
 
-        if (!$item->is_active) {
-            return redirect()->route('poultry.inventory.show', $item)
+        if (! $inventory->is_active) {
+            return redirect()->route('poultry.inventory.show', $inventory)
                 ->with('error', 'Cannot edit a killed (deactivated) inventory item.');
         }
 
-        return view('sectors.poultry.forms.inventory-item', compact('item'));
+        return view('sectors.poultry.forms.inventory-item', ['item' => $inventory]);
     }
 
-    public function update(InventoryItemRequest $request, InventoryItem $item)
+    public function update(InventoryItemRequest $request, InventoryItem $inventory)
     {
-        Gate::authorize('update', $item);
+        Gate::authorize('update', $inventory);
 
-        if (!$item->is_active) {
-            return redirect()->route('poultry.inventory.show', $item)
+        if (! $inventory->is_active) {
+            return redirect()->route('poultry.inventory.show', $inventory)
                 ->with('error', 'Cannot update a killed (deactivated) inventory item.');
         }
 
-        DB::transaction(function () use ($item, $request) {
-            $item->update($request->validated());
+        DB::transaction(function () use ($inventory, $request) {
+            $inventory->update($request->validated());
 
             // Recalculate all batches that consumed this item
-            $batchIds = $item->consumptions()->pluck('poultry_batch_id')->filter()->unique();
+            $batchIds = $inventory->consumptions()->pluck('poultry_batch_id')->filter()->unique();
             foreach ($batchIds as $batchId) {
                 $batch = Batch::find($batchId);
                 if ($batch) {
@@ -119,51 +119,50 @@ class InventoryController extends Controller
             }
         });
 
-        return redirect()->route('poultry.inventory.show', $item)
+        return redirect()->route('poultry.inventory.show', $inventory)
             ->with('success', 'Inventory item updated successfully.');
     }
 
-    public function destroy(InventoryItem $item)
+    public function destroy(InventoryItem $inventory)
     {
-        Gate::authorize('delete', $item);
-        $item->delete();
+        Gate::authorize('delete', $inventory);
+        $inventory->delete();
         return redirect()->route('poultry.inventory.index')
             ->with('success', 'Inventory item deleted.');
     }
 
-    public function kill(Request $request, InventoryItem $item)
+    public function kill(Request $request, InventoryItem $inventory)
     {
-        Gate::authorize('update', $item);
+        Gate::authorize('update', $inventory);
 
-        if (!$item->is_active) {
-            return redirect()->route('poultry.inventory.show', $item)
+        if (! $inventory->is_active) {
+            return redirect()->route('poultry.inventory.show', $inventory)
                 ->with('error', 'This item is already killed.');
         }
 
-        $item->is_active = false;
-        $item->status = 'killed';
-        $item->killed_by_id = auth()->id();
-        $item->killed_at = now();
-        $item->killed_reason = $request->input('reason');
-        $item->save();
+        $inventory->is_active      = false;
+        $inventory->status         = 'killed';
+        $inventory->killed_by_id   = auth()->id();
+        $inventory->killed_at      = now();
+        $inventory->killed_reason  = $request->input('reason');
+        $inventory->save();
 
         return redirect()->route('poultry.inventory.index')
             ->with('success', 'Inventory item killed (deactivated) successfully.');
     }
 
-    public function recalculateCosts(InventoryItem $item)
+    public function recalculateCosts(InventoryItem $inventory)
     {
-        Gate::authorize('update', $item);
+        Gate::authorize('update', $inventory);
 
-        DB::transaction(function () use ($item) {
-            foreach ($item->consumptions as $consumption) {
-                $consumption->unit_cost_at_time = $item->cost_per_unit;
-                $consumption->total_cost = $consumption->quantity_used * $item->cost_per_unit;
+        DB::transaction(function () use ($inventory) {
+            foreach ($inventory->consumptions as $consumption) {
+                $consumption->unit_cost_at_time = $inventory->cost_per_unit;
+                $consumption->total_cost        = $consumption->quantity_used * $inventory->cost_per_unit;
                 $consumption->save();
             }
 
-            // Recalculate batches that consumed this item
-            $batchIds = $item->consumptions()->pluck('poultry_batch_id')->filter()->unique();
+            $batchIds = $inventory->consumptions()->pluck('poultry_batch_id')->filter()->unique();
             foreach ($batchIds as $batchId) {
                 $batch = Batch::find($batchId);
                 if ($batch) {

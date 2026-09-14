@@ -61,6 +61,10 @@
                     </div>
                     @endfor
                 </div>
+                <p class="mt-2 text-xs text-gray-500">
+                    <i class="fas fa-info-circle text-blue-500 mr-1"></i>
+                    High variation (CV ≥ 15%) is allowed – the record will be saved and flagged for monitoring.
+                </p>
             </div>
 
             <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
@@ -93,6 +97,7 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('weightForm');
     const inputs = document.querySelectorAll('.bird-weight-input');
     const batchSelect = document.getElementById('poultry_batch_id');
 
@@ -110,12 +115,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function calculateStats() {
-        let weights = [];
+    function collectWeights() {
+        const weights = [];
         inputs.forEach(input => {
             const val = parseFloat(input.value);
             if (!isNaN(val) && val > 0) weights.push(val);
         });
+        return weights;
+    }
+
+    function calculateStats() {
+        const weights = collectWeights();
         const count = weights.length;
         document.getElementById('birdsCount').textContent = count;
         if (count === 0) {
@@ -142,13 +152,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const cvPercent = document.getElementById('cvPercent');
         statusBox.classList.remove('hidden');
         if (cv >= 15) {
-            cvPercent.className = 'text-2xl font-bold text-red-600';
-            statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-red-100 text-red-800';
-            statusText.textContent = '⚠️ High variation - Check feeding and health';
+            cvPercent.className = 'text-2xl font-bold text-orange-600';
+            statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-orange-100 text-orange-800';
+            statusText.textContent = '⚠️ High variation – record will be saved and flagged for monitoring';
         } else if (cv >= 12) {
             cvPercent.className = 'text-2xl font-bold text-yellow-600';
             statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-yellow-100 text-yellow-800';
-            statusText.textContent = '⚠️ Caution - Monitor closely';
+            statusText.textContent = '⚠️ Caution – Monitor closely';
         } else if (cv >= 10) {
             cvPercent.className = 'text-2xl font-bold text-blue-600';
             statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-blue-100 text-blue-800';
@@ -165,16 +175,24 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBatchInfo();
     calculateStats();
 
-    document.getElementById('weightForm').addEventListener('submit', function(e) {
-        let hasValid = false;
-        inputs.forEach(input => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && val > 0) hasValid = true;
-        });
-        if (!hasValid) {
+    form.addEventListener('submit', function(e) {
+        form.querySelectorAll('input[data-weight-aggregator]').forEach(el => el.remove());
+
+        const weights = collectWeights();
+        if (weights.length === 0) {
             e.preventDefault();
             alert('Please enter at least one valid bird weight.');
+            return;
         }
+
+        weights.forEach(w => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'individual_weights[]';
+            hidden.value = w;
+            hidden.setAttribute('data-weight-aggregator', '1');
+            form.appendChild(hidden);
+        });
     });
 });
 </script>

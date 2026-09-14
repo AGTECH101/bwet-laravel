@@ -45,7 +45,6 @@
                     <select name="format" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                         <option value="excel">Excel (.xlsx)</option>
                         <option value="csv">CSV</option>
-                        <option value="pdf">PDF</option>
                     </select>
                 </div>
 
@@ -68,11 +67,6 @@
                         <label class="block text-sm font-medium text-gray-700 mb-2">Date To</label>
                         <input type="date" name="date_to" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                     </div>
-                </div>
-
-                <div class="flex items-center">
-                    <input type="checkbox" name="include_charts" id="include_charts" value="1" checked class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
-                    <label for="include_charts" class="ml-2 text-sm text-gray-700">Include charts in export</label>
                 </div>
 
                 <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">

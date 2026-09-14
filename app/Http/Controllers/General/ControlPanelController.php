@@ -18,10 +18,6 @@ use Illuminate\Support\Facades\Log;
 
 class ControlPanelController extends Controller
 {
-    /**
-     * Fields that can be edited per table.
-     * Fields NOT in this list are silently ignored on update.
-     */
     private const EDITABLE_FIELDS = [
         'poultry_batches' => [
             'name', 'hatchery', 'start_date', 'starting_flock',
@@ -43,10 +39,6 @@ class ControlPanelController extends Controller
         ],
     ];
 
-    /**
-     * Fields that must be displayed but locked (read-only).
-     * These are computed or derived fields.
-     */
     private const LOCKED_FIELDS = [
         'poultry_batches' => [
             'current_count', 'current_weight_kg', 'current_cost',
@@ -65,7 +57,7 @@ class ControlPanelController extends Controller
             'feed_cost_per_kg', 'total_feed_cost', 'feed_per_bird',
         ],
         'flock_records' => [],
-        'expenses' => [],
+        'expenses'      => [],
     ];
 
     public function index(Request $request)
@@ -95,7 +87,7 @@ class ControlPanelController extends Controller
 
         $validated = $request->validate([
             'table' => 'required|in:poultry_batches,flock_records,weight_records,feed_records,expenses',
-            'id' => 'required|integer',
+            'id'    => 'required|integer',
         ]);
 
         $modelMap = $this->getModelMap();
@@ -107,10 +99,10 @@ class ControlPanelController extends Controller
         }
 
         return response()->json([
-            'record' => $record->toArray(),
-            'primaryKey' => $record->getKeyName(),
+            'record'         => $record->toArray(),
+            'primaryKey'     => $record->getKeyName(),
             'editableFields' => self::EDITABLE_FIELDS[$table] ?? [],
-            'lockedFields' => self::LOCKED_FIELDS[$table] ?? [],
+            'lockedFields'   => self::LOCKED_FIELDS[$table] ?? [],
         ]);
     }
 
@@ -121,22 +113,21 @@ class ControlPanelController extends Controller
         }
 
         $validated = $request->validate([
-            'table' => 'required|in:poultry_batches,flock_records,weight_records,feed_records,expenses',
-            'id' => 'required|integer',
-            'data' => 'required|array',
+            'table'    => 'required|in:poultry_batches,flock_records,weight_records,feed_records,expenses',
+            'id'       => 'required|integer',
+            'data'     => 'required|array',
             'batch_id' => 'nullable|integer',
         ]);
 
         $modelMap = $this->getModelMap();
         $table = $validated['table'];
-        $data = $validated['data'];
+        $data  = $validated['data'];
 
         $record = $modelMap[$table]::find($validated['id']);
         if (!$record) {
             return response()->json(['error' => 'Record not found.'], 404);
         }
 
-        // ── Whitelist enforcement ──
         $editable = self::EDITABLE_FIELDS[$table] ?? [];
         $filtered = [];
         foreach ($editable as $field) {
@@ -171,8 +162,8 @@ class ControlPanelController extends Controller
             });
 
             return response()->json([
-                'success' => true,
-                'message' => 'Record updated and all metrics recalculated.',
+                'success'  => true,
+                'message'  => 'Record updated and all metrics recalculated.',
                 'batch_id' => $validated['batch_id'],
             ]);
         } catch (\Exception $e) {
@@ -188,14 +179,14 @@ class ControlPanelController extends Controller
         }
 
         $validated = $request->validate([
-            'table' => 'required|in:poultry_batches,flock_records,weight_records,feed_records,expenses',
-            'id' => 'required|integer',
+            'table'    => 'required|in:poultry_batches,flock_records,weight_records,feed_records,expenses',
+            'id'       => 'required|integer',
             'batch_id' => 'nullable|integer',
         ]);
 
         $modelMap = $this->getModelMap();
         $table = $validated['table'];
-        $id = $validated['id'];
+        $id    = $validated['id'];
 
         $record = $modelMap[$table]::find($id);
         if (!$record) {
@@ -205,21 +196,11 @@ class ControlPanelController extends Controller
         $batchToRecalc = ($table === 'poultry_batches') ? $record : $record->batch;
 
         try {
-            DB::transaction(function () use ($record, $batchToRecalc, $table) {
-                // Feed records: restore inventory + delete consumption entry
-                if ($table === 'feed_records' && $record->inventory_item_id) {
-                    $item = InventoryItem::find($record->inventory_item_id);
-                    if ($item) {
-                        $item->quantity_in_stock += $record->feed_used;
-                        $item->quantity_used = max(0, $item->quantity_used - $record->feed_used);
-                        $item->save();
-                    }
-
-                    InventoryConsumption::where('source_type', 'feed')
-                        ->where('source_id', $record->id)
-                        ->delete();
-                }
-
+            DB::transaction(function () use ($record, $batchToRecalc) {
+                // Deleting the record fires the appropriate observer.
+                // Feed records → FeedRecordObserver::deleted deletes the
+                // linked InventoryConsumption → InventoryConsumptionObserver
+                // restores stock exactly once.
                 $record->delete();
 
                 if ($batchToRecalc && $batchToRecalc->exists) {
@@ -228,8 +209,8 @@ class ControlPanelController extends Controller
             });
 
             return response()->json([
-                'success' => true,
-                'message' => 'Record deleted and metrics recalculated.',
+                'success'  => true,
+                'message'  => 'Record deleted and metrics recalculated.',
                 'batch_id' => $validated['batch_id'],
             ]);
         } catch (\Exception $e) {
@@ -239,83 +220,30 @@ class ControlPanelController extends Controller
     }
 
     /**
-     * Update a feed record and recalculate all derived fields + inventory.
+     * Update a feed record and let the observer chain rebuild the linked
+     * consumption row. Do not touch inventory stock here.
      */
     private function updateFeedRecord(FeedRecord $record, array $data): void
     {
-        $oldFeedUsed = (float) $record->feed_used;
-        $oldItemId = $record->inventory_item_id;
-
-        // Apply editable fields manually (so we can track changes)
         foreach (['date', 'feed_used', 'inventory_item_id'] as $f) {
             if (array_key_exists($f, $data)) {
                 $record->$f = $data[$f];
             }
         }
 
-        // ── Recalculate derived cost fields ──
         $newItem = InventoryItem::find($record->inventory_item_id);
         if ($newItem) {
             $record->feed_cost_per_kg = $newItem->cost_per_unit;
-            $record->total_feed_cost = (float) $record->feed_used * (float) $newItem->cost_per_unit;
+            $record->total_feed_cost  = (float) $record->feed_used * (float) $newItem->cost_per_unit;
         }
         $record->feed_per_bird = 0;
+
+        // Saving fires FeedRecordObserver::updated, which rebuilds the
+        // consumption row. The InventoryConsumptionObserver adjusts stock
+        // exactly once on the delta.
         $record->save();
-
-        // ── Adjust inventory if quantity or item changed ──
-        $quantityChanged = ((float) $oldFeedUsed !== (float) $record->feed_used);
-        $itemChanged = ($oldItemId != $record->inventory_item_id);
-
-        if ($quantityChanged || $itemChanged) {
-            // 1. Restore stock to the old item
-            if ($oldItemId) {
-                $oldItem = InventoryItem::find($oldItemId);
-                if ($oldItem) {
-                    $oldItem->quantity_in_stock += $oldFeedUsed;
-                    $oldItem->quantity_used = max(0, (float) $oldItem->quantity_used - $oldFeedUsed);
-                    $oldItem->save();
-                }
-            }
-
-            // 2. Deduct stock from the new item
-            if ($newItem) {
-                $newItem->quantity_in_stock = max(0, (float) $newItem->quantity_in_stock - (float) $record->feed_used);
-                $newItem->quantity_used = (float) $newItem->quantity_used + (float) $record->feed_used;
-                $newItem->save();
-            }
-
-            // 3. Update or create the consumption record
-            $consumption = InventoryConsumption::where('source_type', 'feed')
-                ->where('source_id', $record->id)
-                ->first();
-
-            if ($consumption) {
-                $consumption->update([
-                    'inventory_item_id' => $record->inventory_item_id,
-                    'quantity_used' => $record->feed_used,
-                    'unit_cost_at_time' => $newItem?->cost_per_unit ?? 0,
-                    'total_cost' => $record->total_feed_cost,
-                    'date' => $record->date,
-                ]);
-            } elseif ($newItem) {
-                InventoryConsumption::create([
-                    'inventory_item_id' => $newItem->id,
-                    'poultry_batch_id' => $record->poultry_batch_id,
-                    'quantity_used' => $record->feed_used,
-                    'date' => $record->date,
-                    'recorded_by_id' => auth()->id(),
-                    'source_type' => 'feed',
-                    'source_id' => $record->id,
-                    'unit_cost_at_time' => $newItem->cost_per_unit,
-                    'total_cost' => $record->total_feed_cost,
-                ]);
-            }
-        }
     }
 
-    /**
-     * Update a weight record and recalculate its derived metrics.
-     */
     private function updateWeightRecord(WeightRecord $record, array $data): void
     {
         foreach (['date', 'individual_weights', 'notes'] as $f) {
@@ -323,7 +251,6 @@ class ControlPanelController extends Controller
                 $value = $data[$f];
 
                 if ($f === 'individual_weights') {
-                    // Handle JSON string (from textarea) or comma-separated
                     if (is_string($value)) {
                         $decoded = json_decode($value, true);
                         if (is_array($decoded)) {
@@ -335,7 +262,6 @@ class ControlPanelController extends Controller
                             ));
                         }
                     }
-                    // Filter valid numbers
                     if (is_array($value)) {
                         $value = array_values(array_filter($value, fn ($v) => is_numeric($v) && $v > 0));
                     }
@@ -345,7 +271,6 @@ class ControlPanelController extends Controller
             }
         }
 
-        // Recalculates average_weight, cv, cv_status, etc.
         $record->calculateMetrics();
         $record->save();
     }
@@ -354,10 +279,10 @@ class ControlPanelController extends Controller
     {
         return [
             'poultry_batches' => Batch::class,
-            'flock_records' => FlockRecord::class,
-            'weight_records' => WeightRecord::class,
-            'feed_records' => FeedRecord::class,
-            'expenses' => Expense::class,
+            'flock_records'   => FlockRecord::class,
+            'weight_records'  => WeightRecord::class,
+            'feed_records'    => FeedRecord::class,
+            'expenses'        => Expense::class,
         ];
     }
 }

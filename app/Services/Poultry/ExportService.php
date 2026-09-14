@@ -4,20 +4,44 @@ namespace App\Services\Poultry;
 
 use App\Models\Poultry\Batch;
 use Illuminate\Support\Facades\Response;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Csv;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ExportService
 {
     protected static function ensureSpreadsheetAvailable(): void
     {
-        if (! class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+        if (! class_exists(Spreadsheet::class)) {
             throw new \RuntimeException('Spreadsheet export library is not installed. Run: composer require phpoffice/phpspreadsheet');
         }
+    }
+
+    /**
+     * Normalize a caller-supplied format string into ['writerClass', 'extension', 'contentType'].
+     * Only 'excel' (xlsx) and 'csv' are supported.
+     */
+    protected static function resolveFormat(?string $format): array
+    {
+        return match ($format) {
+            'csv' => [
+                'writer'      => Csv::class,
+                'extension'   => 'csv',
+                'contentType' => 'text/csv; charset=utf-8',
+            ],
+            default => [
+                'writer'      => Xlsx::class,
+                'extension'   => 'xlsx',
+                'contentType' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ],
+        };
     }
 
     public static function exportBatchToExcel(Batch $batch, ?string $reportTemplate = 'farm-overview', ?string $format = 'excel')
     {
         self::ensureSpreadsheetAvailable();
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+
+        $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
         $sheet->setCellValue('A1', 'Batch ID');
@@ -35,13 +59,16 @@ class ExportService
         $sheet->setCellValue('A7', 'Selling Price Per Kg');
         $sheet->setCellValue('B7', $batch->getCalculatedSellingPricePerKg());
 
-        return self::streamSpreadsheet($spreadsheet, "batch_{$batch->batch_id}_{$reportTemplate}.{$format}", $format);
+        $filenameBase = "batch_{$batch->batch_id}_{$reportTemplate}";
+
+        return self::streamSpreadsheet($spreadsheet, $filenameBase, $format);
     }
 
     public static function exportDatabaseTemplate(?string $reportTemplate = 'farm-overview', ?int $batchId = null, ?string $format = 'excel')
     {
         self::ensureSpreadsheetAvailable();
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+
+        $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
         $sheet->setCellValue('A1', 'Report Template');
@@ -71,7 +98,9 @@ class ExportService
             $row++;
         }
 
-        return self::streamSpreadsheet($spreadsheet, "database_{$reportTemplate}.{$format}", $format);
+        $filenameBase = "database_{$reportTemplate}";
+
+        return self::streamSpreadsheet($spreadsheet, $filenameBase, $format);
     }
 
     public static function exportAnalyticsReport(?string $reportTemplate = 'performance', ?int $batchId = null, ?string $format = 'excel')
@@ -84,21 +113,34 @@ class ExportService
         return self::exportDatabaseTemplate($reportTemplate, $batchId, $format);
     }
 
-    protected static function streamSpreadsheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet, string $filename, ?string $format = 'excel')
+    /**
+     * Write the spreadsheet to a stream and return a download response.
+     * The filename is built from $filenameBase + the correct extension.
+     */
+    protected static function streamSpreadsheet(Spreadsheet $spreadsheet, string $filenameBase, ?string $format = 'excel')
     {
-        $extension = $format === 'csv' ? 'csv' : 'xlsx';
-        $writer = $format === 'csv' ? new \PhpOffice\PhpSpreadsheet\Writer\Csv($spreadsheet) : new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $resolved = self::resolveFormat($format);
+        $writerClass = $resolved['writer'];
 
-        $content = null;
+        /** @var \PhpOffice\PhpSpreadsheet\Writer\IWriter $writer */
+        $writer = new $writerClass($spreadsheet);
+
+        $filename = $filenameBase . '.' . $resolved['extension'];
+
         ob_start();
         $writer->save('php://output');
         $content = ob_get_clean();
 
+        // Free memory held by the spreadsheet object.
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+
         return Response::make($content, 200, [
-            'Content-Type' => $format === 'csv'
-                ? 'text/csv; charset=utf-8'
-                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename=' . $filename,
+            'Content-Type'        => $resolved['contentType'],
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Length'      => strlen($content),
+            'Cache-Control'       => 'no-store, no-cache, must-revalidate',
+            'Pragma'              => 'no-cache',
         ]);
     }
 }

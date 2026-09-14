@@ -12,8 +12,8 @@ class DatabaseSeeder extends Seeder
             SectorSeeder::class,
             SystemVariableSeeder::class,
             PenSeeder::class,
-            // UserSeeder::class,
-            // RealisticFarmSeeder::class,
+            UserSeeder::class,
+            RealisticFarmSeeder::class,
         ]);
     }
 }

@@ -3,40 +3,84 @@
 namespace App\Observers\Poultry;
 
 use App\Models\Poultry\InventoryConsumption;
-use Illuminate\Support\Facades\DB;
+use App\Models\Poultry\InventoryItem;
 
 class InventoryConsumptionObserver
 {
-    public function created(InventoryConsumption $consumption)
+    /**
+     * Deduct stock when a consumption row is created.
+     */
+    public function created(InventoryConsumption $consumption): void
     {
-        // Update inventory stock atomically
-        DB::table('inventory_items')
-            ->where('id', $consumption->inventory_item_id)
-            ->update([
-                'quantity_in_stock' => DB::raw("quantity_in_stock - {$consumption->quantity_used}"),
-                'quantity_used' => DB::raw("quantity_used + {$consumption->quantity_used}"),
-                'updated_at' => now(),
-            ]);
+        $item = $consumption->inventoryItem ?? InventoryItem::find($consumption->inventory_item_id);
+        if (! $item) {
+            return;
+        }
 
-        // Update batch metrics if batch is linked
-        if ($consumption->poultry_batch_id) {
-            $consumption->batch->updateCachedMetrics();
+        $qty = (float) $consumption->quantity_used;
+
+        $item->quantity_in_stock = max(0, (float) $item->quantity_in_stock - $qty);
+        $item->quantity_used     = (float) $item->quantity_used + $qty;
+        $item->save();
+    }
+
+    /**
+     * Adjust stock when a consumption row changes.
+     *
+     * If only the quantity changed → adjust the delta in place.
+     * If the item changed             → restore the old item, deduct from the new one.
+     */
+    public function updated(InventoryConsumption $consumption): void
+    {
+        $oldQty = (float) $consumption->getOriginal('quantity_used');
+        $newQty = (float) $consumption->quantity_used;
+
+        $oldItemId = (int) $consumption->getOriginal('inventory_item_id');
+        $newItemId = (int) $consumption->inventory_item_id;
+
+        if ($oldItemId === $newItemId) {
+            $item = InventoryItem::find($newItemId);
+            if (! $item) {
+                return;
+            }
+
+            $delta = $newQty - $oldQty;
+            $item->quantity_in_stock = max(0, (float) $item->quantity_in_stock - $delta);
+            $item->quantity_used     = (float) $item->quantity_used + $delta;
+            $item->save();
+            return;
+        }
+
+        // Item changed: restore on old, deduct on new.
+        $oldItem = InventoryItem::find($oldItemId);
+        if ($oldItem) {
+            $oldItem->quantity_in_stock = (float) $oldItem->quantity_in_stock + $oldQty;
+            $oldItem->quantity_used     = max(0, (float) $oldItem->quantity_used - $oldQty);
+            $oldItem->save();
+        }
+
+        $newItem = InventoryItem::find($newItemId);
+        if ($newItem) {
+            $newItem->quantity_in_stock = max(0, (float) $newItem->quantity_in_stock - $newQty);
+            $newItem->quantity_used     = (float) $newItem->quantity_used + $newQty;
+            $newItem->save();
         }
     }
 
-    public function deleted(InventoryConsumption $consumption)
+    /**
+     * Restore stock when a consumption row is deleted.
+     */
+    public function deleted(InventoryConsumption $consumption): void
     {
-        // Restore stock
-        DB::table('inventory_items')
-            ->where('id', $consumption->inventory_item_id)
-            ->update([
-                'quantity_in_stock' => DB::raw("quantity_in_stock + {$consumption->quantity_used}"),
-                'quantity_used' => DB::raw("quantity_used - {$consumption->quantity_used}"),
-                'updated_at' => now(),
-            ]);
-
-        if ($consumption->poultry_batch_id) {
-            $consumption->batch->updateCachedMetrics();
+        $item = InventoryItem::find($consumption->inventory_item_id);
+        if (! $item) {
+            return;
         }
+
+        $qty = (float) $consumption->quantity_used;
+
+        $item->quantity_in_stock = (float) $item->quantity_in_stock + $qty;
+        $item->quantity_used     = max(0, (float) $item->quantity_used - $qty);
+        $item->save();
     }
 }
