@@ -840,25 +840,25 @@ class ExportController extends Controller
         Gate::authorize('export');
 
         $request->validate([
-            'export_type' => 'required|in:batch,database,analytics,financial',
+            'export_type'     => 'required|in:batch,database,analytics,financial',
             'report_template' => 'required|string',
-            'format' => 'required|in:excel,csv,pdf',
-            'batch_id' => 'nullable|exists:poultry_batches,id',
-            'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date|after_or_equal:date_from',
-            'quick' => 'nullable|string|in:all_batches,current_month,performance,financial,inventory',
+            'format'          => 'required|in:excel,csv',
+            'batch_id'        => 'nullable|exists:poultry_batches,id',
+            'date_from'       => 'nullable|date',
+            'date_to'         => 'nullable|date|after_or_equal:date_from',
+            'quick'           => 'nullable|string|in:all_batches,current_month,performance,financial,inventory',
         ]);
 
         $reportTemplate = $request->input('report_template', $request->input('quick') ?: 'farm-overview');
 
         if ($request->filled('quick')) {
             $reportTemplate = match ($request->quick) {
-                'all_batches' => 'farm-overview',
+                'all_batches'   => 'farm-overview',
                 'current_month' => 'monthly-operations',
-                'performance' => 'performance',
-                'financial' => 'financial-summary',
-                'inventory' => 'inventory-summary',
-                default => $reportTemplate,
+                'performance'   => 'performance',
+                'financial'     => 'financial-summary',
+                'inventory'     => 'inventory-summary',
+                default         => $reportTemplate,
             };
         }
 
@@ -899,6 +899,7 @@ use App\Models\Poultry\Batch;
 use App\Models\User;
 use App\Services\HistoryQueryService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class HistoryQueryController extends Controller
 {
@@ -932,7 +933,7 @@ class HistoryQueryController extends Controller
         $result = HistoryQueryService::execute($data);
 
         if (!empty($data['name'])) {
-            $query = HistoryQuery::create([
+            HistoryQuery::create([
                 'name' => $data['name'],
                 'query_type' => $data['query_type'],
                 'date_from' => $data['date_from'] ?? null,
@@ -958,7 +959,6 @@ class HistoryQueryController extends Controller
     public function show(HistoryQuery $historyQuery)
     {
         Gate::authorize('view', $historyQuery);
-        // Re-run the query
         $data = $historyQuery->toArray();
         $result = HistoryQueryService::execute($data);
         return view('general.history.show', compact('historyQuery', 'result'));
@@ -1412,56 +1412,79 @@ namespace App\Http\Controllers\Poultry;
 use App\Http\Controllers\Controller;
 use App\Models\Poultry\Batch;
 use App\Services\Poultry\BatchAnalyticsService;
+use App\Services\Poultry\BatchCalculationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
 class AnalyticsController extends Controller
 {
-    /**
-     * Global analytics across all batches.
-     */
     public function global()
     {
         Gate::authorize('viewAny', Batch::class);
 
-        // Total counts
-        $totalBatches = Batch::count();
-        $activeBatches = Batch::where('status', 'active')->count();
-        $completedBatches = Batch::whereIn('status', ['closed', 'completed'])->count();
-
-        // Financials
-        $totalInvestment = Batch::where('status', 'active')->get()->sum(function ($batch) {
-            return $batch->calculateTotalInvestment();
+        // Refresh checkpoint fields on every batch we're about to read from.
+        Batch::where('status', 'active')->chunk(50, function ($batches) {
+            foreach ($batches as $batch) {
+                $batch->updateCachedMetrics();
+            }
         });
 
-        // Averages
-        $avgFcr = Batch::where('status', 'active')->where('current_cfcr', '>', 0)->avg('current_cfcr') ?? 0;
-        $avgMortality = Batch::where('status', 'active')->where('starting_flock', '>', 0)->get()->map(function ($batch) {
-            return ($batch->total_mortality / $batch->starting_flock) * 100;
-        })->avg() ?? 0;
+        $totalBatches     = Batch::count();
+        $activeBatches    = Batch::where('status', 'active')->count();
+        $completedBatches = Batch::whereIn('status', ['closed', 'completed'])->count();
 
-        // Recent performance data (for table and charts)
+        $activeBatchModels = Batch::where('status', 'active')->get();
+
+        $totalInvestment = $activeBatchModels->sum(function ($batch) {
+            return BatchCalculationService::calculateTotalInvestment($batch);
+        });
+
+        $avgFcr = $activeBatchModels->where('current_cfcr', '>', 0)->avg('current_cfcr') ?? 0;
+
+        $avgMortality = $activeBatchModels
+            ->filter(fn ($b) => $b->starting_flock > 0)
+            ->avg(fn ($b) => ($b->total_mortality / $b->starting_flock) * 100) ?? 0;
+
         $recentPerformance = Batch::orderBy('created_at', 'desc')->limit(10)->get()->map(function ($batch) {
             return [
-                'batch' => $batch->batch_id,
-                'status' => $batch->status,
-                'age' => $batch->current_age_days,
-                'ifcr' => $batch->current_ifcr,
-                'cfcr' => $batch->current_cfcr,
-                'mortality' => $batch->starting_flock > 0 ? ($batch->total_mortality / $batch->starting_flock) * 100 : 0,
-                'profit_percent' => $batch->current_marginal_profit_percent,
+                'batch'          => $batch->batch_id,
+                'status'         => $batch->status,
+                'age'            => $batch->current_age_days,
+                'ifcr'           => (float) $batch->current_ifcr,
+                'cfcr'           => (float) $batch->current_cfcr,
+                'mortality'      => $batch->starting_flock > 0
+                    ? ($batch->total_mortality / $batch->starting_flock) * 100
+                    : 0,
+                'profit_percent' => (float) $batch->current_marginal_profit_percent,
             ];
         })->toArray();
 
-        // Top performers (profit > 20%)
-        $topPerformers = array_filter($recentPerformance, function ($p) {
-            return ($p['profit_percent'] ?? 0) > 20;
-        });
+        // Chart-ready data: one entry per recent batch.
+        $fcrChart = [
+            'labels' => array_map(fn ($p) => $p['batch'], $recentPerformance),
+            'ifcr'   => array_map(fn ($p) => $p['ifcr'], $recentPerformance),
+            'cfcr'   => array_map(fn ($p) => $p['cfcr'], $recentPerformance),
+        ];
 
-        // Areas for improvement (mortality > 8% or profit < 5%)
-        $improvementAreas = array_filter($recentPerformance, function ($p) {
-            return ($p['mortality'] ?? 0) > 8 || ($p['profit_percent'] ?? 0) < 5;
-        });
+        // Bucket recent batches by mortality rate for the distribution chart.
+        $mortalityBuckets = [
+            '< 3%'   => 0,
+            '3-5%'   => 0,
+            '5-8%'   => 0,
+            '8-10%'  => 0,
+            '> 10%'  => 0,
+        ];
+        foreach ($recentPerformance as $p) {
+            $m = $p['mortality'];
+            if ($m < 3)       $mortalityBuckets['< 3%']++;
+            elseif ($m < 5)   $mortalityBuckets['3-5%']++;
+            elseif ($m < 8)   $mortalityBuckets['5-8%']++;
+            elseif ($m < 10)  $mortalityBuckets['8-10%']++;
+            else              $mortalityBuckets['> 10%']++;
+        }
+
+        $topPerformers = array_values(array_filter($recentPerformance, fn ($p) => ($p['profit_percent'] ?? 0) > 20));
+        $improvementAreas = array_values(array_filter($recentPerformance, fn ($p) => ($p['mortality'] ?? 0) > 8 || ($p['profit_percent'] ?? 0) < 5));
 
         return view('sectors.poultry.analytics.global', compact(
             'totalBatches',
@@ -1472,26 +1495,23 @@ class AnalyticsController extends Controller
             'avgMortality',
             'recentPerformance',
             'topPerformers',
-            'improvementAreas'
+            'improvementAreas',
+            'fcrChart',
+            'mortalityBuckets'
         ));
     }
 
-    /**
-     * Charts for a specific batch.
-     */
     public function charts(Batch $batch)
     {
         Gate::authorize('view', $batch);
 
         $chartData = BatchAnalyticsService::getBatchChartData($batch, 30);
         $batch->updateCachedMetrics();
+        $batch->refresh();
 
         return view('sectors.poultry.analytics.charts', compact('batch', 'chartData'));
     }
 
-    /**
-     * Real-time charts for a batch (with auto-refresh).
-     */
     public function realtime(Batch $batch)
     {
         Gate::authorize('view', $batch);
@@ -1499,36 +1519,34 @@ class AnalyticsController extends Controller
         return view('sectors.poultry.analytics.realtime', compact('batch'));
     }
 
-    /**
-     * API endpoint for chart data (AJAX).
-     */
     public function chartData(Batch $batch, Request $request)
     {
         Gate::authorize('view', $batch);
 
-        $days = $request->input('days', 30);
+        $days = max(1, min(365, (int) $request->input('days', 30)));
         $chartData = BatchAnalyticsService::getBatchChartData($batch, $days);
 
-        // Prepare KPI data
         $batch->updateCachedMetrics();
-        $currentWeight = $batch->getCurrentAverageWeight();
-        $currentMortality = $batch->starting_flock > 0 ? ($batch->total_mortality / $batch->starting_flock) * 100 : 0;
-        $currentAdg = $batch->calculate_daily_marginal_profit_percent(); // This is actually ADG? Might need separate method.
+        $batch->refresh();
 
-        // Format historical data for table
-        $historicalData = [];
-        if (!empty($chartData['age_vs_weight']['ages'])) {
-            $count = count($chartData['age_vs_weight']['ages']);
-            for ($i = 0; $i < $count; $i++) {
-                $historicalData[] = [
-                    'date' => $chartData['ifcr_vs_cfcr']['dates'][$i] ?? '',
-                    'age' => $chartData['age_vs_weight']['ages'][$i] ?? 0,
-                    'weight' => $chartData['age_vs_weight']['weights'][$i] ?? 0,
-                    'ifcr' => $chartData['ifcr_vs_cfcr']['ifcr'][$i] ?? 0,
-                    'cfcr' => $chartData['ifcr_vs_cfcr']['cfcr'][$i] ?? 0,
-                    'mortality' => $chartData['mortality_trend']['mortality'][$i] ?? 0,
-                    'adg' => $chartData['adg_vs_age']['adg'][$i] ?? 0,
-                ];
+        $currentWeight = $batch->getCurrentAverageWeight();
+        $currentMortality = $batch->starting_flock > 0
+            ? ($batch->total_mortality / $batch->starting_flock) * 100
+            : 0;
+
+        $recentWeights = $batch->weightRecords()
+            ->orderBy('date', 'desc')
+            ->orderBy('id', 'desc')
+            ->limit(2)
+            ->get();
+
+        $currentAdg = 0.0;
+        if ($recentWeights->count() >= 2) {
+            $latest   = $recentWeights[0];
+            $previous = $recentWeights[1];
+            $daysBetween = (int) $previous->date->diffInDays($latest->date, true);
+            if ($daysBetween > 0) {
+                $currentAdg = ((float) $latest->average_weight - (float) $previous->average_weight) / $daysBetween;
             }
         }
 
@@ -1538,16 +1556,26 @@ class AnalyticsController extends Controller
                 'values' => $chartData['age_vs_weight']['weights'] ?? [],
             ],
             'fcr_data' => [
-                'labels' => $chartData['ifcr_vs_cfcr']['dates'] ?? [],
+                'labels'      => $chartData['ifcr_vs_cfcr']['labels'] ?? [],
                 'ifcr_values' => $chartData['ifcr_vs_cfcr']['ifcr'] ?? [],
                 'cfcr_values' => $chartData['ifcr_vs_cfcr']['cfcr'] ?? [],
             ],
-            'current_weight' => $currentWeight,
-            'current_ifcr' => $batch->current_ifcr,
-            'current_cfcr' => $batch->current_cfcr,
+            'current_weight'    => $currentWeight,
+            'current_ifcr'      => (float) $batch->current_ifcr,
+            'current_cfcr'      => (float) $batch->current_cfcr,
             'current_mortality' => $currentMortality,
-            'current_adg' => $currentAdg,
-            'historical_data' => $historicalData,
+            'current_adg'       => $currentAdg,
+            'historical_data'   => array_map(function ($m) {
+                return [
+                    'date'      => $m['date'],
+                    'age'       => $m['age_days'],
+                    'weight'    => $m['average_weight'],
+                    'ifcr'      => $m['ifcr'],
+                    'cfcr'      => $m['cfcr'],
+                    'mortality' => $m['mortality'],
+                    'adg'       => $m['adg'],
+                ];
+            }, $chartData['metrics'] ?? []),
         ]);
     }
 }
@@ -2873,21 +2901,21 @@ use App\Http\Requests\Poultry\WeightRecordRequest;
 use App\Models\Poultry\Batch;
 use App\Models\Poultry\WeightRecord;
 use App\Services\Poultry\BatchRecalculationService;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\DB;
 
 class WeightRecordController extends Controller
 {
     /**
-     * CV threshold for high variation warning (in percent).
-     * Change this value to adjust the warning threshold.
+     * CV threshold at or above which we surface a high-variation warning
+     * to the user. This is a *warning*, not a rejection — the record is
+     * always saved and used downstream.
+     *
+     * Must match the threshold used by WeightRecord::calculateMetrics()
+     * to assign the 'high' cv_status.
      */
-    const CV_THRESHOLD = 20;
+    const CV_HIGH_THRESHOLD = 15;
 
-    /**
-     * Display weight records for a batch.
-     */
     public function index(Batch $batch)
     {
         Gate::authorize('view', $batch);
@@ -2895,9 +2923,6 @@ class WeightRecordController extends Controller
         return view('sectors.poultry.weight-records.index', compact('batch', 'records'));
     }
 
-    /**
-     * Show the create form (used by Form Hub AND resource route).
-     */
     public function create(?Batch $batch = null)
     {
         Gate::authorize('create', WeightRecord::class);
@@ -2914,9 +2939,11 @@ class WeightRecordController extends Controller
 
     /**
      * Store a new weight record.
-     * - Calculates CV, mean, avg weight
-     * - Saves record (even if CV is high)
-     * - Recalculates batch metrics
+     *
+     * The record is always saved. If the CV is at or above
+     * CV_HIGH_THRESHOLD we flash a warning so the user knows to
+     * monitor the flock, but the record still drives the batch's
+     * average weight and every metric downstream.
      */
     public function store(WeightRecordRequest $request)
     {
@@ -2943,27 +2970,24 @@ class WeightRecordController extends Controller
             BatchRecalculationService::recalculateAll($batch);
         });
 
-        if ($cv >= self::CV_THRESHOLD) {
-            session()->flash('warning', 'Weight record saved with high variation (CV ≥ ' . self::CV_THRESHOLD . '%). Please monitor the flock closely.');
+        if ($cv >= self::CV_HIGH_THRESHOLD) {
+            session()->flash(
+                'warning',
+                'Weight record saved with high variation (CV ' . number_format($cv, 2) . '%, threshold ' . self::CV_HIGH_THRESHOLD . '%). '
+                . 'The sample was still recorded and used in analytics. Please monitor feeding and flock health.'
+            );
         }
 
         return redirect()->route('poultry.batches.show', $batch)
             ->with('success', 'Weight record saved and metrics recalculated.');
     }
 
-    /**
-     * Show the edit form.
-     */
     public function edit(WeightRecord $weightRecord)
     {
         Gate::authorize('update', $weightRecord);
         return view('sectors.poultry.weight-records.edit', compact('weightRecord'));
     }
 
-    /**
-     * Update a weight record.
-     * Recalculates CV and batch metrics.
-     */
     public function update(WeightRecordRequest $request, WeightRecord $weightRecord)
     {
         Gate::authorize('update', $weightRecord);
@@ -2982,18 +3006,18 @@ class WeightRecordController extends Controller
             BatchRecalculationService::recalculateAll($batch);
         });
 
-        if ($cv >= self::CV_THRESHOLD) {
-            session()->flash('warning', 'Weight record updated with high variation (CV ≥ ' . self::CV_THRESHOLD . '%). Please monitor the flock closely.');
+        if ($cv >= self::CV_HIGH_THRESHOLD) {
+            session()->flash(
+                'warning',
+                'Weight record updated with high variation (CV ' . number_format($cv, 2) . '%, threshold ' . self::CV_HIGH_THRESHOLD . '%). '
+                . 'The sample was still recorded and used in analytics. Please monitor feeding and flock health.'
+            );
         }
 
         return redirect()->route('poultry.batches.show', $weightRecord->batch)
             ->with('success', 'Weight record updated and metrics recalculated.');
     }
 
-    /**
-     * Delete a weight record.
-     * Full recalc happens automatically.
-     */
     public function destroy(WeightRecord $weightRecord)
     {
         Gate::authorize('delete', $weightRecord);
@@ -3259,11 +3283,22 @@ class WeightRecordRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Convert newline-separated weights into an array before validation.
+     *
+     * The forms post weight_1..weight_10 which are aggregated client-side
+     * into individual_weights[]. This handles the case where the field is
+     * submitted as a newline-separated string (e.g. from a CLI test or a
+     * legacy form).
+     */
     protected function prepareForValidation(): void
     {
         if (is_string($this->input('individual_weights'))) {
             $rawWeights = preg_split('/\r\n|\r|\n/', trim((string) $this->input('individual_weights')));
-            $weights = array_values(array_filter(array_map(static fn ($value) => trim((string) $value), $rawWeights), static fn ($value) => $value !== ''));
+            $weights = array_values(array_filter(
+                array_map(static fn ($value) => trim((string) $value), $rawWeights),
+                static fn ($value) => $value !== ''
+            ));
 
             $this->merge([
                 'individual_weights' => $weights,
@@ -3274,43 +3309,21 @@ class WeightRecordRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'poultry_batch_id' => 'required|exists:poultry_batches,id',
-            'date' => 'required|date',
-            'individual_weights' => ['required', 'array', 'min:1', 'max:10'],
-            'individual_weights.*' => 'numeric|min:0.001|max:5',
-            'notes' => 'nullable|string|max:1000',
+            'poultry_batch_id'    => 'required|exists:poultry_batches,id',
+            'date'                => 'required|date',
+            'individual_weights'  => ['required', 'array', 'min:1', 'max:10'],
+            'individual_weights.*'=> 'numeric|min:0.001|max:5',
+            'notes'               => 'nullable|string|max:1000',
         ];
     }
 
-    public function withValidator($validator): void
-    {
-        $validator->after(function ($validator) {
-            $weights = $this->input('individual_weights', []);
-
-            if (! is_array($weights) || count($weights) < 2) {
-                return;
-            }
-
-            $numericWeights = array_values(array_filter(array_map(static fn ($item) => is_numeric($item) ? (float) $item : null, $weights), static fn ($item) => $item !== null));
-
-            if (count($numericWeights) < 2) {
-                return;
-            }
-
-            $mean = array_sum($numericWeights) / count($numericWeights);
-            if ($mean <= 0) {
-                return;
-            }
-
-            $variance = array_sum(array_map(static fn ($weight) => ($weight - $mean) ** 2, $numericWeights)) / count($numericWeights);
-            $stdDev = sqrt($variance);
-            $cv = ($stdDev / $mean) * 100;
-
-            if ($cv >= 15) {
-                $validator->errors()->add('individual_weights', 'High weight variation detected (CV >= 15%). Please re-take the sample before saving.');
-            }
-        });
-    }
+    // CV policy: any variation is accepted.
+    //   CV < 10  → 'excellent'  (badge: green)
+    //   CV < 12  → 'caution'    (badge: blue)
+    //   CV < 15  → 'warning'    (badge: yellow)
+    //   CV >= 15 → 'high'       (badge: orange, warning flash)
+    // The record is always saved with is_valid_sample = true and used
+    // everywhere downstream (average weight, FCR, batch metrics).
 }
 
 app/Models/BatchStateMigration.php:
@@ -4306,6 +4319,12 @@ class InventoryItem extends Model
 {
     use HasFactory;
 
+    /**
+     * Conversion factor: 1 bag = 25 kg.
+     * Applied on save; the stored record is always in kg.
+     */
+    const KG_PER_BAG = 25;
+
     protected $fillable = [
         'name', 'category', 'unit', 'quantity_in_stock', 'quantity_used',
         'minimum_quantity', 'vendor', 'cost_per_unit', 'is_active',
@@ -4322,6 +4341,28 @@ class InventoryItem extends Model
         'killed_at' => 'datetime',
     ];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Normalize bag-based submissions to kg on every save.
+        //
+        // If a user enters "10 bags at ₦5000/bag", we store it as
+        // "250 kg at ₦200/kg" so every downstream calculation (feed
+        // cost, inventory consumption, batch investment) uses kg
+        // consistently. The 'bag' unit is therefore a display-only
+        // shorthand at the input edge, never a stored state.
+        static::saving(function (InventoryItem $item) {
+            if ($item->unit === 'bag') {
+                $item->quantity_in_stock  = (float) $item->quantity_in_stock  * self::KG_PER_BAG;
+                $item->quantity_used      = (float) $item->quantity_used      * self::KG_PER_BAG;
+                $item->minimum_quantity   = (float) $item->minimum_quantity   * self::KG_PER_BAG;
+                $item->cost_per_unit      = (float) $item->cost_per_unit      / self::KG_PER_BAG;
+                $item->unit               = 'kg';
+            }
+        });
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by_id');
@@ -4337,7 +4378,6 @@ class InventoryItem extends Model
         return $this->hasMany(InventoryConsumption::class);
     }
 
-    // Helpers
     public function isLowStock(): bool
     {
         return $this->quantity_in_stock <= $this->minimum_quantity;
@@ -4350,7 +4390,7 @@ class InventoryItem extends Model
 
     public function getTotalValue(): float
     {
-        return $this->quantity_in_stock * $this->cost_per_unit;
+        return (float) $this->quantity_in_stock * (float) $this->cost_per_unit;
     }
 
     public function kill(User $user, ?string $reason = null)
@@ -4615,6 +4655,19 @@ class WeightRecord extends Model
         return $this->belongsTo(User::class, 'recorded_by_id');
     }
 
+    /**
+     * Compute metrics from individual_weights.
+     *
+     * CV policy:
+     *   < 10  → 'excellent'  (badge: green)
+     *   < 12  → 'caution'    (badge: blue)
+     *   < 15  → 'warning'    (badge: yellow)
+     *   >= 15 → 'high'       (badge: orange, warning flash on store/update)
+     *
+     * Every record is flagged is_valid_sample = true so downstream
+     * metrics (average weight, FCR, batch calculations) use it
+     * regardless of variation.
+     */
     public function calculateMetrics(): void
     {
         $weights = is_array($this->individual_weights) ? $this->individual_weights : [];
@@ -4627,29 +4680,23 @@ class WeightRecord extends Model
         $this->total_weight = array_sum($weights);
         $this->average_weight = $this->total_weight / $num;
 
-        $mean = $this->average_weight;
+        $mean = (float) $this->average_weight;
         $variance = array_sum(array_map(fn ($w) => ($w - $mean) ** 2, $weights)) / $num;
         $stddev = sqrt($variance);
         $cv = $mean > 0 ? ($stddev / $mean) * 100 : 0;
         $this->coefficient_variation = round($cv, 2);
 
-        // ── Status based on CV ──
-        // 'high' is a warning label, NOT a rejection.
-        // The record is still saved and used in analytics.
         if ($cv >= 15) {
             $this->cv_status = 'high';
-            $this->is_valid_sample = true;
         } elseif ($cv >= 12) {
             $this->cv_status = 'warning';
-            $this->is_valid_sample = true;
         } elseif ($cv >= 10) {
             $this->cv_status = 'caution';
-            $this->is_valid_sample = true;
         } else {
             $this->cv_status = 'excellent';
-            $this->is_valid_sample = true;
         }
 
+        $this->is_valid_sample = true;
         $this->expected_weight = $this->calculateExpectedWeight();
     }
 
@@ -4817,7 +4864,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name', 'email', 'password', 'role', 'phone', 'farm_location',
-        'is_approved', 'approved_by_id', 'approved_at'
+        'is_approved', 'is_active', 'approved_by_id', 'approved_at'
     ];
 
     protected $hidden = ['password', 'remember_token', 'two_factor_recovery_codes', 'two_factor_secret'];
@@ -4825,6 +4872,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'is_approved' => 'boolean',
+        'is_active' => 'boolean',
         'approved_at' => 'datetime',
     ];
 
@@ -4849,7 +4897,6 @@ class User extends Authenticatable
         return $this->hasMany(NotificationReadStatus::class);
     }
 
-    // Relationships to poultry models (if needed)
     public function createdBatches()
     {
         return $this->hasMany(Poultry\Batch::class, 'created_by_id');
@@ -5779,96 +5826,130 @@ app/Services/Poultry/BatchAnalyticsService.php:
 namespace App\Services\Poultry;
 
 use App\Models\Poultry\Batch;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class BatchAnalyticsService
 {
+    /**
+     * Build chart-ready and table-ready data for a batch.
+     *
+     * Returns:
+     *   - ifcr_vs_cfcr:      ['labels' => [], 'ifcr' => [], 'cfcr' => []]
+     *   - adg_vs_age:        ['dates' => [], 'adg' => [], 'target_adg' => []]
+     *   - age_vs_weight:     ['ages' => [], 'weights' => []]
+     *   - mortality_trend:   ['dates' => [], 'mortality' => []]
+     *   - metrics:           flat rows for the data table
+     *   - no_data:           true if the batch has no weight records in range
+     */
     public static function getBatchChartData(Batch $batch, int $days = 30): array
     {
-        // Get weight records in date range
         $endDate = Carbon::today();
         $startDate = $endDate->copy()->subDays($days);
 
         $weightRecords = $batch->weightRecords()
             ->whereBetween('date', [$startDate, $endDate])
             ->orderBy('date')
+            ->orderBy('id')
             ->get();
 
         if ($weightRecords->isEmpty()) {
             return [
-                'ifcr_vs_cfcr' => ['labels' => [], 'ifcr' => [], 'cfcr' => []],
-                'adg_vs_age' => ['dates' => [], 'adg' => [], 'target_adg' => []],
-                'age_vs_weight' => ['ages' => [], 'weights' => []],
+                'ifcr_vs_cfcr'    => ['labels' => [], 'ifcr' => [], 'cfcr' => []],
+                'adg_vs_age'      => ['dates' => [], 'adg' => [], 'target_adg' => []],
+                'age_vs_weight'   => ['ages' => [], 'weights' => []],
                 'mortality_trend' => ['dates' => [], 'mortality' => []],
-                'no_data' => true,
+                'metrics'         => [],
+                'no_data'         => true,
             ];
         }
 
         $chartData = [
-            'ifcr_vs_cfcr' => ['labels' => [], 'ifcr' => [], 'cfcr' => []],
-            'adg_vs_age' => ['dates' => [], 'adg' => [], 'target_adg' => []],
-            'age_vs_weight' => ['ages' => [], 'weights' => []],
+            'ifcr_vs_cfcr'    => ['labels' => [], 'ifcr' => [], 'cfcr' => []],
+            'adg_vs_age'      => ['dates' => [], 'adg' => [], 'target_adg' => []],
+            'age_vs_weight'   => ['ages' => [], 'weights' => []],
             'mortality_trend' => ['dates' => [], 'mortality' => []],
-            'no_data' => false,
+            'metrics'         => [],
+            'no_data'         => false,
         ];
 
         $list = $weightRecords->values();
+        $batchStart = $batch->start_date;
 
         for ($i = 0; $i < $list->count(); $i++) {
             $record = $list[$i];
             $dateLabel = $record->date->format('m-d');
-            $age = (int) $record->date->diffInDays($batch->start_date);
+            $age = $batchStart ? (int) $batchStart->diffInDays($record->date, true) : 0;
 
             // Age vs Weight
             $chartData['age_vs_weight']['ages'][] = $age;
             $chartData['age_vs_weight']['weights'][] = (float) $record->average_weight;
 
-            // FCR data
-            $cumulativeFeed = $batch->feedRecords()->where('date', '<=', $record->date)->sum('feed_used') ?? 0;
-            $cumulativeWeightGain = ($record->average_weight - 0.045) * $batch->remaining_flock;
+            // Cumulative feed up to this date
+            $cumulativeFeed = (float) $batch->feedRecords()
+                ->where('date', '<=', $record->date)
+                ->sum('feed_used');
+
+            // Cumulative weight gain estimate for CFCR
+            $cumulativeWeightGain = ((float) $record->average_weight - 0.045) * max(1, (int) $batch->remaining_flock);
             $cfcr = $cumulativeWeightGain > 0 ? $cumulativeFeed / $cumulativeWeightGain : 0;
 
             $chartData['ifcr_vs_cfcr']['labels'][] = $dateLabel;
-            $chartData['ifcr_vs_cfcr']['cfcr'][] = (float) $cfcr;
+            $chartData['ifcr_vs_cfcr']['cfcr'][] = round((float) $cfcr, 4);
 
+            // Interval FCR (feed between consecutive weight records / gain)
             if ($i > 0) {
                 $prev = $list[$i - 1];
-                $daysBetween = $record->date->diffInDays($prev->date);
-                $weightGain = $record->average_weight - $prev->average_weight;
-                $feedInPeriod = $batch->feedRecords()->whereBetween('date', [$prev->date, $record->date])->sum('feed_used') ?? 0;
+                $daysBetween = (int) $prev->date->diffInDays($record->date, true);
+                $weightGain = (float) $record->average_weight - (float) $prev->average_weight;
+                $feedInPeriod = (float) $batch->feedRecords()
+                    ->whereBetween('date', [$prev->date, $record->date])
+                    ->sum('feed_used');
+
                 $ifcr = ($weightGain > 0 && $daysBetween > 0 && $batch->remaining_flock > 0)
-                    ? $feedInPeriod / ($weightGain * $batch->remaining_flock)
+                    ? $feedInPeriod / ($weightGain * max(1, (int) $batch->remaining_flock))
                     : 0;
-                $chartData['ifcr_vs_cfcr']['ifcr'][] = (float) $ifcr;
+
+                $chartData['ifcr_vs_cfcr']['ifcr'][] = round((float) $ifcr, 4);
+
+                $adg = $daysBetween > 0 ? $weightGain / $daysBetween : 0;
             } else {
-                // First record - use day 0
-                $daysFromStart = $age;
-                $weightGain = $record->average_weight - 0.045;
-                $feedFromStart = $batch->feedRecords()->where('date', '<=', $record->date)->sum('feed_used') ?? 0;
-                $ifcr = ($weightGain > 0 && $daysFromStart > 0 && $batch->remaining_flock > 0)
-                    ? $feedFromStart / ($weightGain * $batch->remaining_flock)
+                // First record: measure from day 0 (chick weight)
+                $weightGain = (float) $record->average_weight - 0.045;
+                $feedFromStart = $cumulativeFeed;
+                $ifcr = ($weightGain > 0 && $age > 0 && $batch->remaining_flock > 0)
+                    ? $feedFromStart / ($weightGain * max(1, (int) $batch->remaining_flock))
                     : 0;
-                $chartData['ifcr_vs_cfcr']['ifcr'][] = (float) $ifcr;
+
+                $chartData['ifcr_vs_cfcr']['ifcr'][] = round((float) $ifcr, 4);
+
+                $adg = $age > 0 ? $weightGain / $age : 0;
             }
 
-            // ADG
-            if ($i > 0) {
-                $prev = $list[$i - 1];
-                $daysBetween = $record->date->diffInDays($prev->date);
-                $adg = $daysBetween > 0 ? ($record->average_weight - $prev->average_weight) / $daysBetween : 0;
-            } else {
-                $adg = $age > 0 ? ($record->average_weight - 0.045) / $age : 0;
-            }
             $chartData['adg_vs_age']['dates'][] = $dateLabel;
-            $chartData['adg_vs_age']['adg'][] = (float) $adg;
-            $chartData['adg_vs_age']['target_adg'][] = 0.065; // 65g/day
+            $chartData['adg_vs_age']['adg'][] = round((float) $adg, 4);
+            $chartData['adg_vs_age']['target_adg'][] = 0.065;
 
-            // Mortality
-            $mortalityToDate = $batch->flockRecords()->where('date', '<=', $record->date)->sum('mortality') ?? 0;
-            $mortalityRate = $batch->starting_flock > 0 ? ($mortalityToDate / $batch->starting_flock) * 100 : 0;
+            // Cumulative mortality up to this date
+            $mortalityToDate = (int) $batch->flockRecords()
+                ->where('date', '<=', $record->date)
+                ->sum('mortality');
+            $mortalityRate = $batch->starting_flock > 0
+                ? ($mortalityToDate / $batch->starting_flock) * 100
+                : 0;
+
             $chartData['mortality_trend']['dates'][] = $dateLabel;
-            $chartData['mortality_trend']['mortality'][] = (float) $mortalityRate;
+            $chartData['mortality_trend']['mortality'][] = round((float) $mortalityRate, 2);
+
+            // Row for the data table
+            $chartData['metrics'][] = [
+                'date'           => $record->date->toDateString(),
+                'age_days'       => $age,
+                'average_weight' => (float) $record->average_weight,
+                'ifcr'           => (float) end($chartData['ifcr_vs_cfcr']['ifcr']),
+                'cfcr'           => (float) end($chartData['ifcr_vs_cfcr']['cfcr']),
+                'adg'            => (float) $adg,
+                'mortality'      => (float) $mortalityRate,
+            ];
         }
 
         return $chartData;
@@ -6882,20 +6963,44 @@ namespace App\Services\Poultry;
 
 use App\Models\Poultry\Batch;
 use Illuminate\Support\Facades\Response;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Csv;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ExportService
 {
     protected static function ensureSpreadsheetAvailable(): void
     {
-        if (! class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+        if (! class_exists(Spreadsheet::class)) {
             throw new \RuntimeException('Spreadsheet export library is not installed. Run: composer require phpoffice/phpspreadsheet');
         }
+    }
+
+    /**
+     * Normalize a caller-supplied format string into ['writerClass', 'extension', 'contentType'].
+     * Only 'excel' (xlsx) and 'csv' are supported.
+     */
+    protected static function resolveFormat(?string $format): array
+    {
+        return match ($format) {
+            'csv' => [
+                'writer'      => Csv::class,
+                'extension'   => 'csv',
+                'contentType' => 'text/csv; charset=utf-8',
+            ],
+            default => [
+                'writer'      => Xlsx::class,
+                'extension'   => 'xlsx',
+                'contentType' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ],
+        };
     }
 
     public static function exportBatchToExcel(Batch $batch, ?string $reportTemplate = 'farm-overview', ?string $format = 'excel')
     {
         self::ensureSpreadsheetAvailable();
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+
+        $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
         $sheet->setCellValue('A1', 'Batch ID');
@@ -6913,13 +7018,16 @@ class ExportService
         $sheet->setCellValue('A7', 'Selling Price Per Kg');
         $sheet->setCellValue('B7', $batch->getCalculatedSellingPricePerKg());
 
-        return self::streamSpreadsheet($spreadsheet, "batch_{$batch->batch_id}_{$reportTemplate}.{$format}", $format);
+        $filenameBase = "batch_{$batch->batch_id}_{$reportTemplate}";
+
+        return self::streamSpreadsheet($spreadsheet, $filenameBase, $format);
     }
 
     public static function exportDatabaseTemplate(?string $reportTemplate = 'farm-overview', ?int $batchId = null, ?string $format = 'excel')
     {
         self::ensureSpreadsheetAvailable();
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+
+        $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
         $sheet->setCellValue('A1', 'Report Template');
@@ -6949,7 +7057,9 @@ class ExportService
             $row++;
         }
 
-        return self::streamSpreadsheet($spreadsheet, "database_{$reportTemplate}.{$format}", $format);
+        $filenameBase = "database_{$reportTemplate}";
+
+        return self::streamSpreadsheet($spreadsheet, $filenameBase, $format);
     }
 
     public static function exportAnalyticsReport(?string $reportTemplate = 'performance', ?int $batchId = null, ?string $format = 'excel')
@@ -6962,21 +7072,34 @@ class ExportService
         return self::exportDatabaseTemplate($reportTemplate, $batchId, $format);
     }
 
-    protected static function streamSpreadsheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet, string $filename, ?string $format = 'excel')
+    /**
+     * Write the spreadsheet to a stream and return a download response.
+     * The filename is built from $filenameBase + the correct extension.
+     */
+    protected static function streamSpreadsheet(Spreadsheet $spreadsheet, string $filenameBase, ?string $format = 'excel')
     {
-        $extension = $format === 'csv' ? 'csv' : 'xlsx';
-        $writer = $format === 'csv' ? new \PhpOffice\PhpSpreadsheet\Writer\Csv($spreadsheet) : new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $resolved = self::resolveFormat($format);
+        $writerClass = $resolved['writer'];
 
-        $content = null;
+        /** @var \PhpOffice\PhpSpreadsheet\Writer\IWriter $writer */
+        $writer = new $writerClass($spreadsheet);
+
+        $filename = $filenameBase . '.' . $resolved['extension'];
+
         ob_start();
         $writer->save('php://output');
         $content = ob_get_clean();
 
+        // Free memory held by the spreadsheet object.
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+
         return Response::make($content, 200, [
-            'Content-Type' => $format === 'csv'
-                ? 'text/csv; charset=utf-8'
-                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename=' . $filename,
+            'Content-Type'        => $resolved['contentType'],
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Length'      => strlen($content),
+            'Cache-Control'       => 'no-store, no-cache, must-revalidate',
+            'Pragma'              => 'no-cache',
         ]);
     }
 }
@@ -7177,55 +7300,11 @@ config/app.php:
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Application Name
-    |--------------------------------------------------------------------------
-    |
-    | This value is the name of your application, which will be used when the
-    | framework needs to place the application's name in a notification or
-    | other UI elements where an application name needs to be displayed.
-    |
-    */
-
     'name' => env('APP_NAME', 'Laravel'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Application Environment
-    |--------------------------------------------------------------------------
-    |
-    | This value determines the "environment" your application is currently
-    | running in. This may determine how you prefer to configure various
-    | services the application utilizes. Set this in your ".env" file.
-    |
-    */
 
     'env' => env('APP_ENV', 'production'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Application Debug Mode
-    |--------------------------------------------------------------------------
-    |
-    | When your application is in debug mode, detailed error messages with
-    | stack traces will be shown on every error that occurs within your
-    | application. If disabled, a simple generic error page is shown.
-    |
-    */
-
     'debug' => (bool) env('APP_DEBUG', false),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Application URL
-    |--------------------------------------------------------------------------
-    |
-    | This URL is used by the console to properly generate URLs when using
-    | the Artisan command line tool. You should set this to the root of
-    | the application so that it's available within Artisan commands.
-    |
-    */
 
     'url' => env('APP_URL', 'http://localhost'),
 
@@ -7234,41 +7313,18 @@ return [
     | Application Timezone
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | Set to Africa/Lagos so daily records entered between 00:00 and 01:00 WAT
+    | are attributed to the correct calendar day rather than the previous one.
     |
     */
 
-    'timezone' => 'UTC',
-
-    /*
-    |--------------------------------------------------------------------------
-    | Application Locale Configuration
-    |--------------------------------------------------------------------------
-    |
-    | The application locale determines the default locale that will be used
-    | by Laravel's translation / localization methods. This option can be
-    | set to any locale for which you plan to have translation strings.
-    |
-    */
+    'timezone' => env('APP_TIMEZONE', 'Africa/Lagos'),
 
     'locale' => env('APP_LOCALE', 'en'),
 
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
 
     'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Encryption Key
-    |--------------------------------------------------------------------------
-    |
-    | This key is utilized by Laravel's encryption services and should be set
-    | to a random, 32 character string to ensure that all encrypted values
-    | are secure. You should do this prior to deploying the application.
-    |
-    */
 
     'cipher' => 'AES-256-CBC',
 
@@ -7280,26 +7336,12 @@ return [
         ),
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Maintenance Mode Driver
-    |--------------------------------------------------------------------------
-    |
-    | These configuration options determine the driver used to determine and
-    | manage Laravel's "maintenance mode" status. The "cache" driver will
-    | allow maintenance mode to be controlled across multiple machines.
-    |
-    | Supported drivers: "file", "cache"
-    |
-    */
-
     'maintenance' => [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
 ];
-
 
 config/auth.php:
 <?php
@@ -10653,6 +10695,61 @@ return new class extends Migration
     }
 };
 
+database/migrations/2026_09_14_151215_make_batch_id_nullable_on_poultry_batches.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('poultry_batches', function (Blueprint $table) {
+            $table->string('batch_id')->nullable()->change();
+        });
+    }
+
+    public function down(): void
+    {
+        // Note: a reverse migration can only run if there are no NULL batch_ids.
+        Schema::table('poultry_batches', function (Blueprint $table) {
+            $table->string('batch_id')->nullable(false)->change();
+        });
+    }
+};
+
+database/migrations/2026_09_14_151308_add_is_active_to_users_table.php:
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        if (Schema::hasColumn('users', 'is_active')) {
+            return;
+        }
+
+        Schema::table('users', function (Blueprint $table) {
+            $table->boolean('is_active')->default(true)->after('is_approved');
+        });
+    }
+
+    public function down(): void
+    {
+        if (Schema::hasColumn('users', 'is_active')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('is_active');
+            });
+        }
+    }
+};
+
 database/seeders/DatabaseSeeder.php:
 <?php
 
@@ -10665,11 +10762,11 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
-            SectorSeeder::class,
-            SystemVariableSeeder::class,
-            PenSeeder::class,
-            UserSeeder::class,
-            RealisticFarmSeeder::class,
+            // SectorSeeder::class,
+            // SystemVariableSeeder::class,
+            // PenSeeder::class,
+            // // UserSeeder::class,
+            // // RealisticFarmSeeder::class,
         ]);
     }
 }
@@ -14430,7 +14527,6 @@ resources/views/general/export/index.blade.php:
                     <select name="format" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                         <option value="excel">Excel (.xlsx)</option>
                         <option value="csv">CSV</option>
-                        <option value="pdf">PDF</option>
                     </select>
                 </div>
 
@@ -14453,11 +14549,6 @@ resources/views/general/export/index.blade.php:
                         <label class="block text-sm font-medium text-gray-700 mb-2">Date To</label>
                         <input type="date" name="date_to" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                     </div>
-                </div>
-
-                <div class="flex items-center">
-                    <input type="checkbox" name="include_charts" id="include_charts" value="1" checked class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
-                    <label for="include_charts" class="ml-2 text-sm text-gray-700">Include charts in export</label>
                 </div>
 
                 <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
@@ -17477,7 +17568,6 @@ resources/views/sectors/poultry/analytics/global.blade.php:
 
 @section('content')
 <div class="space-y-6">
-    <!-- Summary -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
@@ -17494,7 +17584,7 @@ resources/views/sectors/poultry/analytics/global.blade.php:
         </div>
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
-                <div><p class="text-sm font-medium text-gray-600">Avg. FCR</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgFcr ?? 0, 3) }}</p></div>
+                <div><p class="text-sm font-medium text-gray-600">Avg. cFCR</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgFcr ?? 0, 3) }}</p></div>
                 <div class="w-12 h-12 rounded-lg bg-blue-500 flex items-center justify-center"><i class="fas fa-chart-line text-white text-xl"></i></div>
             </div>
             @php
@@ -17502,29 +17592,26 @@ resources/views/sectors/poultry/analytics/global.blade.php:
                 $fcrStatusClass = $avgFcrValue < 1.8 ? 'text-green-600' : ($avgFcrValue < 2.0 ? 'text-yellow-600' : 'text-red-600');
                 $fcrStatusText = $avgFcrValue < 1.8 ? 'Excellent' : ($avgFcrValue < 2.0 ? 'Good' : 'Needs Improvement');
             @endphp
-            <div class="mt-4 text-sm {{ $fcrStatusClass }}">
-                {{ $fcrStatusText }}
-            </div>
+            <div class="mt-4 text-sm {{ $fcrStatusClass }}">{{ $fcrStatusText }}</div>
         </div>
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between">
                 <div><p class="text-sm font-medium text-gray-600">Avg. Mortality</p><p class="text-3xl font-bold text-gray-900 mt-2">{{ number_format($avgMortality ?? 0, 1) }}%</p></div>
                 @php
-                $avgMortalityValue = $avgMortality ?? 0;
-                $mortalityBadgeClass = $avgMortalityValue < 5 ? 'bg-green-500' : ($avgMortalityValue < 8 ? 'bg-yellow-500' : 'bg-red-500');
-            @endphp
-            <div class="w-12 h-12 rounded-lg {{ $mortalityBadgeClass }} flex items-center justify-center">
+                    $avgMortalityValue = $avgMortality ?? 0;
+                    $mortalityBadgeClass = $avgMortalityValue < 5 ? 'bg-green-500' : ($avgMortalityValue < 8 ? 'bg-yellow-500' : 'bg-red-500');
+                @endphp
+                <div class="w-12 h-12 rounded-lg {{ $mortalityBadgeClass }} flex items-center justify-center">
                     <i class="fas fa-chart-pie text-white text-xl"></i>
                 </div>
             </div>
-            <div class="mt-4 text-sm text-gray-500">Target: < 5%</div>
+            <div class="mt-4 text-sm text-gray-500">Target: &lt; 5%</div>
         </div>
     </div>
 
-    <!-- Charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-6">FCR Trend Over Time</h3>
+            <h3 class="text-lg font-semibold text-gray-900 mb-6">FCR per Recent Batch</h3>
             <div style="height: 300px;"><canvas id="fcrTrendChart"></canvas></div>
         </div>
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -17533,7 +17620,6 @@ resources/views/sectors/poultry/analytics/global.blade.php:
         </div>
     </div>
 
-    <!-- Performance Table -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200">
             <h3 class="text-lg font-semibold text-gray-900">Recent Batch Performance</h3>
@@ -17545,7 +17631,8 @@ resources/views/sectors/poultry/analytics/global.blade.php:
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Age</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">FCR</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">iFCR</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">cFCR</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mortality</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit %</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Performance</th>
@@ -17558,29 +17645,28 @@ resources/views/sectors/poultry/analytics/global.blade.php:
                         <td class="px-6 py-4">{!! batch_status_badge($perf['status'] ?? 'unknown') !!}</td>
                         <td class="px-6 py-4 text-sm">{{ $perf['age'] ?? 0 }} days</td>
                         <td class="px-6 py-4 text-sm {{ ($perf['ifcr'] ?? 0) < 1.8 ? 'text-green-600' : 'text-yellow-600' }}">{{ number_format($perf['ifcr'] ?? 0, 3) }}</td>
+                        <td class="px-6 py-4 text-sm {{ ($perf['cfcr'] ?? 0) < 1.8 ? 'text-green-600' : 'text-yellow-600' }}">{{ number_format($perf['cfcr'] ?? 0, 3) }}</td>
                         <td class="px-6 py-4 text-sm {{ ($perf['mortality'] ?? 0) < 5 ? 'text-green-600' : 'text-red-600' }}">{{ number_format($perf['mortality'] ?? 0, 1) }}%</td>
                         <td class="px-6 py-4 text-sm {{ ($perf['profit_percent'] ?? 0) > 20 ? 'text-green-600' : 'text-yellow-600' }}">{{ number_format($perf['profit_percent'] ?? 0, 1) }}%</td>
                         <td class="px-6 py-4">
                             @php
                                 $profitPercent = (float) ($perf['profit_percent'] ?? 0);
-                                $performanceScore = (($profitPercent + 20) / 2);
+                                $performanceScore = min(max((($profitPercent + 20) / 2), 0), 100);
                                 $performanceClass = $performanceScore > 70 ? 'bg-green-500' : ($performanceScore > 50 ? 'bg-yellow-500' : 'bg-red-500');
                             @endphp
                             <div class="w-24 bg-gray-200 rounded-full h-2">
-                                <div class="h-2 rounded-full {{ $performanceClass }}"
-                                     style="width: {{ min($performanceScore, 100) }}%"></div>
+                                <div class="h-2 rounded-full {{ $performanceClass }}" style="width: {{ $performanceScore }}%"></div>
                             </div>
                         </td>
                     </tr>
                     @empty
-                    <tr><td colspan="7" class="px-6 py-12 text-center text-gray-500">No performance data available</td></tr>
+                    <tr><td colspan="8" class="px-6 py-12 text-center text-gray-500">No performance data available</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
     </div>
 
-    <!-- Insights -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Performers</h3>
@@ -17598,7 +17684,10 @@ resources/views/sectors/poultry/analytics/global.blade.php:
             @forelse($improvementAreas ?? [] as $area)
             <div class="p-3 bg-red-50 rounded-lg border border-red-100 mb-2">
                 <p class="text-sm font-medium text-gray-900">{{ $area['batch'] ?? 'Batch' }}</p>
-                <p class="text-xs text-red-600">{{ $area['issue'] ?? 'Needs attention' }}</p>
+                <p class="text-xs text-red-600">
+                    @if(($area['mortality'] ?? 0) > 8) High mortality ({{ number_format($area['mortality'], 1) }}%) @endif
+                    @if(($area['profit_percent'] ?? 0) < 5 && ($area['profit_percent'] ?? 0) < 5) Low profit ({{ number_format($area['profit_percent'], 1) }}%) @endif
+                </p>
             </div>
             @empty
             <p class="text-sm text-gray-500">All batches performing well</p>
@@ -17624,18 +17713,38 @@ resources/views/sectors/poultry/analytics/global.blade.php:
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const fcrData = @json($fcrChart ?? ['labels' => [], 'ifcr' => [], 'cfcr' => []]);
+    const mortalityBuckets = @json($mortalityBuckets ?? []);
+
     const fcrCtx = document.getElementById('fcrTrendChart');
     if (fcrCtx) {
         new Chart(fcrCtx, {
-            type: 'line',
+            type: 'bar',
             data: {
-                labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
+                labels: fcrData.labels.length ? fcrData.labels : ['No Data'],
                 datasets: [
-                    { label: 'Average iFCR', data: [1.2, 1.4, 1.6, 1.7, 1.8, 1.85, 1.9, 1.95], borderColor: '#3b82f6', tension: 0.4 },
-                    { label: 'Target FCR', data: [1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8], borderColor: '#10b981', borderDash: [5,5], pointRadius: 0 }
+                    {
+                        label: 'iFCR',
+                        data: fcrData.ifcr.length ? fcrData.ifcr : [0],
+                        backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: 'cFCR',
+                        data: fcrData.cfcr.length ? fcrData.cfcr : [0],
+                        backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                        borderColor: 'rgb(239, 68, 68)',
+                        borderWidth: 1,
+                    }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false, min: 1.0 } } }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, title: { display: true, text: 'FCR' } } },
+                plugins: { legend: { position: 'top' } }
+            }
         });
     }
 
@@ -17644,8 +17753,12 @@ document.addEventListener('DOMContentLoaded', function() {
         new Chart(mortalityCtx, {
             type: 'bar',
             data: {
-                labels: ['< 3%', '3-5%', '5-8%', '8-10%', '> 10%'],
-                datasets: [{ label: 'Number of Batches', data: [5, 8, 4, 2, 1], backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#ef4444'] }]
+                labels: Object.keys(mortalityBuckets),
+                datasets: [{
+                    label: 'Number of Batches',
+                    data: Object.values(mortalityBuckets),
+                    backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#ef4444']
+                }]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
@@ -17682,7 +17795,6 @@ resources/views/sectors/poultry/analytics/realtime.blade.php:
 
 @section('content')
 <div class="space-y-6">
-    <!-- KPI Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-white rounded-lg shadow p-4 border border-gray-200">
             <div class="text-gray-500 text-sm font-medium">Average Weight</div>
@@ -17706,7 +17818,6 @@ resources/views/sectors/poultry/analytics/realtime.blade.php:
         </div>
     </div>
 
-    <!-- Charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Weight Progression</h3>
@@ -17718,7 +17829,6 @@ resources/views/sectors/poultry/analytics/realtime.blade.php:
         </div>
     </div>
 
-    <!-- Data Table -->
     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200">
             <h3 class="text-lg font-semibold text-gray-900">Historical Data</h3>
@@ -17747,7 +17857,7 @@ resources/views/sectors/poultry/analytics/realtime.blade.php:
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const batchId = '{{ $batch->id }}';
+const chartDataUrl = @json(route('poultry.api.chart-data', ['batch' => $batch->id]));
 let weightChart, fcrChart;
 let refreshInterval;
 
@@ -17777,8 +17887,16 @@ function initializeCharts() {
 }
 
 function fetchData() {
-    fetch(`/api/batches/${batchId}/chart-data/`)
-        .then(r => r.json())
+    fetch(chartDataUrl, {
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+        .then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
         .then(data => {
             updateCharts(data);
             updateKPIs(data);
@@ -17803,11 +17921,11 @@ function updateCharts(data) {
 }
 
 function updateKPIs(data) {
-    document.getElementById('kpiWeight').textContent = data.current_weight ? data.current_weight.toFixed(3) + ' kg' : '--';
-    document.getElementById('kpiIfcr').textContent = data.current_ifcr ? data.current_ifcr.toFixed(3) : '--';
-    document.getElementById('kpiCfcr').textContent = data.current_cfcr ? data.current_cfcr.toFixed(3) : '--';
-    document.getElementById('kpiMortality').textContent = data.current_mortality ? data.current_mortality.toFixed(2) + '%' : '--';
-    document.getElementById('kpiAdg').textContent = data.current_adg ? data.current_adg.toFixed(3) : '--';
+    document.getElementById('kpiWeight').textContent = data.current_weight ? Number(data.current_weight).toFixed(3) + ' kg' : '--';
+    document.getElementById('kpiIfcr').textContent = data.current_ifcr ? Number(data.current_ifcr).toFixed(3) : '--';
+    document.getElementById('kpiCfcr').textContent = data.current_cfcr ? Number(data.current_cfcr).toFixed(3) : '--';
+    document.getElementById('kpiMortality').textContent = data.current_mortality ? Number(data.current_mortality).toFixed(2) + '%' : '--';
+    document.getElementById('kpiAdg').textContent = data.current_adg ? Number(data.current_adg).toFixed(3) : '--';
 }
 
 function updateTable(data) {
@@ -17820,11 +17938,11 @@ function updateTable(data) {
         <tr>
             <td class="px-6 py-3 text-sm">${row.date || '-'}</td>
             <td class="px-6 py-3 text-sm">${row.age || '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.weight ? row.weight.toFixed(3) : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.ifcr ? row.ifcr.toFixed(3) : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.cfcr ? row.cfcr.toFixed(3) : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.mortality ? row.mortality.toFixed(2) + '%' : '-'}</td>
-            <td class="px-6 py-3 text-sm">${row.adg ? row.adg.toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.weight ? Number(row.weight).toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.ifcr ? Number(row.ifcr).toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.cfcr ? Number(row.cfcr).toFixed(3) : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.mortality ? Number(row.mortality).toFixed(2) + '%' : '-'}</td>
+            <td class="px-6 py-3 text-sm">${row.adg ? Number(row.adg).toFixed(3) : '-'}</td>
         </tr>
     `).join('');
 }
@@ -17847,7 +17965,6 @@ function manualRefresh() {
     fetchData();
 }
 
-// Clean up interval on page leave
 document.addEventListener('beforeunload', function() {
     if (refreshInterval) clearInterval(refreshInterval);
 });
@@ -19979,9 +20096,13 @@ resources/views/sectors/poultry/forms/inventory-item.blade.php:
                         <option value="l" {{ old('unit') == 'l' ? 'selected' : '' }}>Liter (l)</option>
                         <option value="ml" {{ old('unit') == 'ml' ? 'selected' : '' }}>Milliliter (ml)</option>
                         <option value="unit" {{ old('unit') == 'unit' ? 'selected' : '' }}>Unit</option>
-                        <option value="bag" {{ old('unit') == 'bag' ? 'selected' : '' }}>Bag</option>
+                        <option value="bag" {{ old('unit') == 'bag' ? 'selected' : '' }}>Bag (25 kg)</option>
                         <option value="box" {{ old('unit') == 'box' ? 'selected' : '' }}>Box</option>
                     </select>
+                    <p class="mt-1 text-xs text-gray-500" id="bagHint" style="display: none;">
+                        <i class="fas fa-info-circle text-blue-500"></i>
+                        Bags are converted to kg on save (1 bag = 25 kg). Enter cost per bag — we'll divide it by 25.
+                    </p>
                     @error('unit') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                 </div>
             </div>
@@ -19990,6 +20111,7 @@ resources/views/sectors/poultry/forms/inventory-item.blade.php:
                 <div>
                     <label for="quantity_in_stock" class="block text-sm font-medium text-gray-700">Initial Stock <span class="text-red-500">*</span></label>
                     <input type="number" name="quantity_in_stock" id="quantity_in_stock" value="{{ old('quantity_in_stock', 0) }}" step="0.001" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500" required>
+                    <p class="mt-1 text-xs text-gray-500" id="stockUnitLabel">In the selected unit</p>
                     @error('quantity_in_stock') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                 </div>
                 <div>
@@ -20029,16 +20151,19 @@ resources/views/sectors/poultry/forms/inventory-item.blade.php:
 document.addEventListener('DOMContentLoaded', function() {
     const unitSelect = document.getElementById('unit');
     const categorySelect = document.getElementById('category');
+    const bagHint = document.getElementById('bagHint');
+    const stockUnitLabel = document.getElementById('stockUnitLabel');
 
+    // Category → allowed units filtering.
     function updateUnitOptions() {
         const category = categorySelect.value;
         const units = {
-            'feed': ['kg', 'bag'],
-            'vaccine': ['unit', 'ml'],
-            'medicine': ['kg', 'g', 'ml', 'unit'],
+            'feed':        ['kg', 'bag'],
+            'vaccine':     ['unit', 'ml'],
+            'medicine':    ['kg', 'g', 'ml', 'unit'],
             'consumables': ['unit', 'box'],
-            'packaging': ['box', 'unit'],
-            'other': ['kg', 'g', 'l', 'ml', 'unit', 'bag', 'box']
+            'packaging':   ['box', 'unit'],
+            'other':       ['kg', 'g', 'l', 'ml', 'unit', 'bag', 'box']
         };
 
         const allowed = units[category] || ['kg', 'g', 'l', 'ml', 'unit', 'bag', 'box'];
@@ -20051,30 +20176,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    categorySelect.addEventListener('change', updateUnitOptions);
-    updateUnitOptions();
+    function updateBagHint() {
+        const isBag = unitSelect.value === 'bag';
+        bagHint.style.display = isBag ? 'block' : 'none';
+        stockUnitLabel.textContent = isBag
+            ? 'In bags (will be converted to kg on save)'
+            : 'In the selected unit';
+    }
 
-    // Auto-convert bag to kg if feed selected
-    const form = document.querySelector('form');
-    form.addEventListener('submit', function(e) {
-        const category = categorySelect.value;
-        const unit = unitSelect.value;
-        if (category === 'feed' && unit === 'bag') {
-            const stockInput = document.getElementById('quantity_in_stock');
-            const minInput = document.getElementById('minimum_quantity');
-            const costInput = document.getElementById('cost_per_unit');
-            if (stockInput.value && parseFloat(stockInput.value) > 0) {
-                stockInput.value = parseFloat(stockInput.value) * 25;
-            }
-            if (minInput.value && parseFloat(minInput.value) > 0) {
-                minInput.value = parseFloat(minInput.value) * 25;
-            }
-            if (costInput.value && parseFloat(costInput.value) > 0) {
-                costInput.value = parseFloat(costInput.value) / 25;
-            }
-            unitSelect.value = 'kg';
-        }
-    });
+    categorySelect.addEventListener('change', updateUnitOptions);
+    unitSelect.addEventListener('change', updateBagHint);
+    updateUnitOptions();
+    updateBagHint();
 });
 </script>
 @endpush
@@ -20440,6 +20553,10 @@ resources/views/sectors/poultry/forms/weight-record.blade.php:
                     </div>
                     @endfor
                 </div>
+                <p class="mt-2 text-xs text-gray-500">
+                    <i class="fas fa-info-circle text-blue-500 mr-1"></i>
+                    High variation (CV ≥ 15%) is allowed – the record will be saved and flagged for monitoring.
+                </p>
             </div>
 
             <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
@@ -20472,6 +20589,7 @@ resources/views/sectors/poultry/forms/weight-record.blade.php:
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('weightForm');
     const inputs = document.querySelectorAll('.bird-weight-input');
     const batchSelect = document.getElementById('poultry_batch_id');
 
@@ -20489,12 +20607,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function calculateStats() {
-        let weights = [];
+    function collectWeights() {
+        const weights = [];
         inputs.forEach(input => {
             const val = parseFloat(input.value);
             if (!isNaN(val) && val > 0) weights.push(val);
         });
+        return weights;
+    }
+
+    function calculateStats() {
+        const weights = collectWeights();
         const count = weights.length;
         document.getElementById('birdsCount').textContent = count;
         if (count === 0) {
@@ -20521,13 +20644,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const cvPercent = document.getElementById('cvPercent');
         statusBox.classList.remove('hidden');
         if (cv >= 15) {
-            cvPercent.className = 'text-2xl font-bold text-red-600';
-            statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-red-100 text-red-800';
-            statusText.textContent = '⚠️ High variation - Check feeding and health';
+            cvPercent.className = 'text-2xl font-bold text-orange-600';
+            statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-orange-100 text-orange-800';
+            statusText.textContent = '⚠️ High variation – record will be saved and flagged for monitoring';
         } else if (cv >= 12) {
             cvPercent.className = 'text-2xl font-bold text-yellow-600';
             statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-yellow-100 text-yellow-800';
-            statusText.textContent = '⚠️ Caution - Monitor closely';
+            statusText.textContent = '⚠️ Caution – Monitor closely';
         } else if (cv >= 10) {
             cvPercent.className = 'text-2xl font-bold text-blue-600';
             statusBox.className = 'mt-3 p-2 rounded text-sm font-medium bg-blue-100 text-blue-800';
@@ -20544,16 +20667,24 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBatchInfo();
     calculateStats();
 
-    document.getElementById('weightForm').addEventListener('submit', function(e) {
-        let hasValid = false;
-        inputs.forEach(input => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && val > 0) hasValid = true;
-        });
-        if (!hasValid) {
+    form.addEventListener('submit', function(e) {
+        form.querySelectorAll('input[data-weight-aggregator]').forEach(el => el.remove());
+
+        const weights = collectWeights();
+        if (weights.length === 0) {
             e.preventDefault();
             alert('Please enter at least one valid bird weight.');
+            return;
         }
+
+        weights.forEach(w => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'individual_weights[]';
+            hidden.value = w;
+            hidden.setAttribute('data-weight-aggregator', '1');
+            form.appendChild(hidden);
+        });
     });
 });
 </script>
@@ -21349,6 +21480,7 @@ resources/views/sectors/poultry/weight-records/create.blade.php:
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('weightForm');
     const inputs = document.querySelectorAll('.bird-weight-input');
     const batchSelect = document.getElementById('poultry_batch_id');
 
@@ -21366,12 +21498,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function calculateStats() {
-        let weights = [];
+    function collectWeights() {
+        const weights = [];
         inputs.forEach(input => {
             const val = parseFloat(input.value);
             if (!isNaN(val) && val > 0) weights.push(val);
         });
+        return weights;
+    }
+
+    function calculateStats() {
+        const weights = collectWeights();
         const count = weights.length;
         document.getElementById('birdsCount').textContent = count;
 
@@ -21425,16 +21562,28 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBatchInfo();
     calculateStats();
 
-    document.getElementById('weightForm').addEventListener('submit', function(e) {
-        let hasValid = false;
-        inputs.forEach(input => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && val > 0) hasValid = true;
-        });
-        if (!hasValid) {
+    // Build the individual_weights[] array on submit.
+    // The named inputs (weight_1..weight_10) never reach the server as-is;
+    // we convert them into the array format the FormRequest expects.
+    form.addEventListener('submit', function(e) {
+        // Remove any previous hidden inputs from a failed submission attempt.
+        form.querySelectorAll('input[data-weight-aggregator]').forEach(el => el.remove());
+
+        const weights = collectWeights();
+        if (weights.length === 0) {
             e.preventDefault();
             alert('Please enter at least one valid bird weight.');
+            return;
         }
+
+        weights.forEach(w => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'individual_weights[]';
+            hidden.value = w;
+            hidden.setAttribute('data-weight-aggregator', '1');
+            form.appendChild(hidden);
+        });
     });
 });
 </script>
@@ -21513,7 +21662,7 @@ resources/views/sectors/poultry/weight-records/edit.blade.php:
             <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div><p class="text-xs text-gray-600">Birds Weighed</p><p class="text-2xl font-bold text-gray-900" id="birdsCount">{{ count($weights) }}</p></div>
-                    <div><p class="text-xs text-gray-600">Total Weight</p><p class="text-2xl font-bold text-gray-900"><span id="totalWeight">{{ number_format(array_sum($weights), 3) }}</span> kg</p></div>
+                    <div><p class="text-xs text-gray-600">Total Weight</p><p class="text-2xl font-bold text-gray-900"><span id="totalWeight">{{ count($weights) > 0 ? number_format(array_sum($weights), 3) : '0.000' }}</span> kg</p></div>
                     <div><p class="text-xs text-gray-600">Average Weight</p><p class="text-2xl font-bold text-blue-600"><span id="avgWeight">{{ count($weights) > 0 ? number_format(array_sum($weights)/count($weights), 3) : '0.000' }}</span> kg</p></div>
                     <div><p class="text-xs text-gray-600">CV</p><p class="text-2xl font-bold" id="cvPercent"><span id="cvValue">{{ number_format($weightRecord->coefficient_variation, 2) }}</span>%</p></div>
                 </div>
@@ -21558,6 +21707,7 @@ resources/views/sectors/poultry/weight-records/edit.blade.php:
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('weightForm');
     const inputs = document.querySelectorAll('.bird-weight-input');
     const batchSelect = document.getElementById('poultry_batch_id');
 
@@ -21569,12 +21719,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function calculateStats() {
-        let weights = [];
+    function collectWeights() {
+        const weights = [];
         inputs.forEach(input => {
             const val = parseFloat(input.value);
             if (!isNaN(val) && val > 0) weights.push(val);
         });
+        return weights;
+    }
+
+    function calculateStats() {
+        const weights = collectWeights();
         const count = weights.length;
         document.getElementById('birdsCount').textContent = count;
 
@@ -21632,16 +21787,24 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBatchInfo();
     calculateStats();
 
-    document.getElementById('weightForm').addEventListener('submit', function(e) {
-        let hasValid = false;
-        inputs.forEach(input => {
-            const val = parseFloat(input.value);
-            if (!isNaN(val) && val > 0) hasValid = true;
-        });
-        if (!hasValid) {
+    form.addEventListener('submit', function(e) {
+        form.querySelectorAll('input[data-weight-aggregator]').forEach(el => el.remove());
+
+        const weights = collectWeights();
+        if (weights.length === 0) {
             e.preventDefault();
             alert('Please enter at least one valid bird weight.');
+            return;
         }
+
+        weights.forEach(w => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'individual_weights[]';
+            hidden.value = w;
+            hidden.setAttribute('data-weight-aggregator', '1');
+            form.appendChild(hidden);
+        });
     });
 });
 </script>
@@ -23092,57 +23255,128 @@ class SystemVariableFutureOnlyTest extends TestCase
 }
 
 
-tests/Feature/WeightRecordHighVariationRejectsTest.php:
+tests/Feature/WeightRecordHighVariationAcceptedTest.php:
 <?php
 
 namespace Tests\Feature;
 
 use App\Models\Poultry\Batch;
+use App\Models\Poultry\WeightRecord;
 use App\Models\Sector;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-class WeightRecordHighVariationRejectsTest extends TestCase
+class WeightRecordHighVariationAcceptedTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_high_variation_weight_records_are_rejected(): void
+    /**
+     * A sample with CV >= 15% must be accepted, saved with
+     * cv_status = 'high', flagged is_valid_sample = true, and
+     * surfaced to the user via a warning flash.
+     */
+    public function test_high_variation_weight_record_is_accepted_and_tagged_high(): void
     {
         $user = User::factory()->create([
             'role' => 'staff',
+            'is_approved' => true,
         ]);
 
         $sector = Sector::create([
             'name' => 'Poultry',
             'slug' => 'poultry',
             'description' => 'Test poultry sector',
-            'is_active' => true,
         ]);
 
-        Batch::create([
+        $batch = Batch::create([
             'batch_id' => 'B-TEST-001',
             'name' => 'Test Batch',
             'start_date' => now()->subDays(20),
             'starting_flock' => 100,
             'remaining_flock' => 100,
             'status' => 'active',
+            'phase' => 'batch',
             'sector_id' => $sector->id,
+            'created_by_id' => $user->id,
+        ]);
+
+        // Wide spread of weights → CV well above 15%.
+        $response = $this->actingAs($user)
+            ->post(route('poultry.forms.weight-record.store'), [
+                'poultry_batch_id' => $batch->id,
+                'date' => now()->toDateString(),
+                'individual_weights' => [
+                    0.35, 0.40, 0.95, 2.65, 1.80,
+                    0.50, 1.85, 0.45, 2.45, 0.30,
+                ],
+                'notes' => 'High variation sample',
+            ]);
+
+        // Must redirect on success (not bounce back with validation errors).
+        $response->assertRedirect(route('poultry.batches.show', $batch));
+        $response->assertSessionHas('success');
+        $response->assertSessionHas('warning');
+        $response->assertSessionHasNoErrors();
+
+        // Record persisted with the right tags.
+        $this->assertDatabaseCount('weight_records', 1);
+
+        $record = WeightRecord::first();
+        $this->assertSame('high', $record->cv_status);
+        $this->assertTrue((bool) $record->is_valid_sample);
+        $this->assertGreaterThanOrEqual(15.0, (float) $record->coefficient_variation);
+
+        // The batch's average weight must reflect the new sample.
+        $batch->refresh();
+        $this->assertGreaterThan(0, (float) $batch->current_average_weight);
+    }
+
+    /**
+     * A low-variation sample should save with 'excellent' and no warning.
+     */
+    public function test_low_variation_weight_record_saves_without_warning(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'staff',
+            'is_approved' => true,
+        ]);
+
+        $sector = Sector::create([
+            'name' => 'Poultry',
+            'slug' => 'poultry',
+            'description' => 'Test poultry sector',
+        ]);
+
+        $batch = Batch::create([
+            'batch_id' => 'B-TEST-002',
+            'name' => 'Tight Batch',
+            'start_date' => now()->subDays(20),
+            'starting_flock' => 100,
+            'remaining_flock' => 100,
+            'status' => 'active',
+            'phase' => 'batch',
+            'sector_id' => $sector->id,
+            'created_by_id' => $user->id,
         ]);
 
         $response = $this->actingAs($user)
             ->post(route('poultry.forms.weight-record.store'), [
-                'poultry_batch_id' => 1,
+                'poultry_batch_id' => $batch->id,
                 'date' => now()->toDateString(),
-                'individual_weights' => [0.35, 0.40, 0.95, 2.65, 1.80, 0.50, 1.85, 0.45, 2.45, 0.30],
-                'notes' => 'High variation sample',
+                'individual_weights' => [1.80, 1.82, 1.81, 1.79, 1.80, 1.83, 1.81, 1.80],
+                'notes' => 'Uniform sample',
             ]);
 
-        $response->assertSessionHasErrors('individual_weights');
-        $this->assertDatabaseCount('weight_records', 0);
+        $response->assertRedirect(route('poultry.batches.show', $batch));
+        $response->assertSessionHas('success');
+        $response->assertSessionMissing('warning');
+
+        $record = WeightRecord::first();
+        $this->assertSame('excellent', $record->cv_status);
+        $this->assertTrue((bool) $record->is_valid_sample);
     }
 }
-
 
 tests/TestCase.php:
 <?php
