@@ -6,19 +6,22 @@ C:.
 |   .htaccess
 |   .user.ini
 |   artisan
+|   compile_code.py
 |   composer.json
 |   composer.lock
 |   error_log
 |   favicon.ico
 |   filelist.txt
 |   index.php
+|   note.txt
 |   package.json
 |   php.ini
 |   phpunit.xml
+|   proj_code.txt
 |   README.md
 |   render.yaml
 |   robots.txt
-|   structure.txt
+|   sqlite_to_mysql.py
 |   vite.config.js
 |   
 +---.well-known
@@ -35,7 +38,6 @@ C:.
 |   |           
 |   +---Console
 |   |   \---Commands
-|   |           MakeViewCommand.php
 |   |           MigrateBatchState.php
 |   |           
 |   +---Helpers
@@ -131,13 +133,10 @@ C:.
 |   |   \---Poultry
 |   |           BatchAnalyticsService.php
 |   |           BatchCalculationService.php
-|   |           BatchObserver.php
 |   |           BatchRecalculationService.php
 |   |           BatchTriggerService.php
 |   |           DashboardService.php
 |   |           ExportService.php
-|   |           FeedRecordObserver.php
-|   |           InventoryConsumptionObserver.php
 |   |           
 |   \---Traits
 |           ChecksBatchStatus.php
@@ -221,6 +220,8 @@ C:.
 |   |       2026_09_09_123340_add_source_to_batch_state_migrations.php
 |   |       2026_09_09_123947_add_delta_columns_to_flock_records.php
 |   |       2026_09_14_082012_relax_flock_and_weight_constraints.php
+|   |       2026_09_14_151215_make_batch_id_nullable_on_poultry_batches.php
+|   |       2026_09_14_151308_add_is_active_to_users_table.php
 |   |       
 |   \---seeders
 |           DatabaseSeeder.php
@@ -414,77 +415,12 @@ C:.
 |   |   |       
 |   |   \---views
 |   |           .gitignore
-|   |           081bb06a439296cb8437833a0811d95c.php
-|   |           082893191f343f5fbe9709cb417d206c.php
-|   |           09cdd914cd21f5d3307081c02efed328.php
-|   |           0c329e9cb023f618916a7a1ebae10f1f.php
-|   |           0eec67806e8f2dfac5fb828b2088d172.php
-|   |           0f56ea43836be8d1861103bff55a4096.php
-|   |           10b4e731dffe325bea6ce6780ca9f601.php
-|   |           13887e62b4153f109c2c76c8335c4b9a.php
-|   |           207409cb52717bac35bd7f44b14aa60d.php
-|   |           2215ed6dbbb8b8b780e7285a1ba88c35.php
 |   |           24f1984583912024e4140bbcefd2ca70.php
-|   |           2a880f7013638a3a9cbbb1b2631cd655.php
-|   |           2cf7e0c90afa3f18c9a4aba952522d13.php
-|   |           2e4227babc1ecf45afcab14a4ca1fa10.php
 |   |           330e54f95489c2f8d9f8bb2cd95dbf4c.php
-|   |           33aea40af1c98bae3d40b8d3637056b0.php
-|   |           37787032df4836a56484ad46b2ae0ccf.php
-|   |           3a08b3e25df6a08bf29694e5b59019ac.php
-|   |           3d22dd0c3ec8b78c36d66cf56d6317af.php
-|   |           4182725b33c6fd3004a97f9e2dd14e86.php
-|   |           429c52c6375f3e843613a559f4d6251c.php
-|   |           43656982c1ea89a25be9fb3845e52625.php
-|   |           43bd21b2379bd734724c3f528f6b39bb.php
-|   |           45b7393bd7f16a2bde764527d9a91f6c.php
-|   |           4a41b2e9de54a316388c982c65b7c08b.php
-|   |           4bd1e941814647b452d0fc81f5a1afe8.php
-|   |           58bce11f69e4f42d7fa87b37d1ed3fbd.php
-|   |           5a6e6b08e5f58586219fead7786181b8.php
-|   |           607022ba9d7e70e5011ec02ed9e46e6c.php
-|   |           627980f66d4b65f92b871325da85a14b.php
-|   |           64c63ed64cdeb46809199b5fea844763.php
-|   |           64d09c190e4f1380e70212f5277fa6f2.php
-|   |           65247de1a9b37fdd902ffe69d7b5ac87.php
-|   |           667f276be5b149a23ebbcbcd346087b5.php
-|   |           75ab8687f30e5debf37c92e7a6827ea8.php
-|   |           7b5a53526ed7f98a9923dc00e22fd31b.php
-|   |           827158e437e9ca54595c13f211a30e9e.php
-|   |           848cbd01fc47d60993c66992eda17a04.php
-|   |           84dd8dd07334efbfc295ff4032bd344e.php
-|   |           865c675d02418d2c3f21c1cbc40b6a5d.php
-|   |           8b6348ae6c7f62996750d6977b1d6857.php
-|   |           9157067133a95f0b82df65b17b6766b9.php
-|   |           916ea581995687afd7253bac30f540ff.php
-|   |           928ce0138bb720ecaa1b56d31741c664.php
-|   |           941e3e80a3cbc730e6b2d0312ddd1399.php
 |   |           9547e0fda2100cdce954586db0cb0c2e.php
-|   |           98f5837eef6f61f39d0b71a682b5580c.php
-|   |           99e2a6eecf4008258b292e5f836fd721.php
-|   |           a70f178e38411d3820b68d3fd3b3f26a.php
-|   |           ab00223a213d9204f7a36fa1b5d801b0.php
-|   |           b02564f8085e5c62bfdc33ed9e92c016.php
-|   |           b0d865a9c7529a2ea7ab6674fd1777a1.php
-|   |           b122116cf9106ce6dfe64b7d12f5a8d7.php
-|   |           b273de365262039408b372ee81d45900.php
-|   |           b30bb41d555cfd93a898bcd4c5b5aa06.php
+|   |           a2eccaa109a0e580bb3a286f68d03ab8.php
 |   |           b3bebb96057eba18264ad54c5d7c77f8.php
-|   |           b42940f1efc685341e0ed7d9b5861c35.php
-|   |           ba2f3231b320402901ebca53445dc53b.php
-|   |           c03162146e0b9935afc704918ad180ad.php
-|   |           c446e217a3a0b48859863a4cbde1156b.php
-|   |           c6f44fcc3659db7af127407099214b25.php
-|   |           c90c2f21833d60136ac35ce205c6400f.php
 |   |           c928626e3a26da164f2c6d9b83e943da.php
-|   |           cac3167e4d93c89016bd8c8cec603043.php
-|   |           cb2381af559a2ed274dd0fa1d0029ad1.php
-|   |           d93f17d5485f89ae27cfaba6614018e2.php
-|   |           e3f4cd4d15a7f7e4ffcfccbdc7cf70d2.php
-|   |           f44c11f5c8cab73066000d5985e204e3.php
-|   |           f7cf678e202887508895749d02649e99.php
-|   |           fba3e417f4273779934840b0d93f0a8d.php
-|   |           fdb479393d1e439b58e5342871b71b3c.php
 |   |           
 |   \---logs
 |           .gitignore
@@ -501,7 +437,7 @@ C:.
 |   |       ObservationAndTransferRouteTest.php
 |   |       PoultryViewRoutesTest.php
 |   |       SystemVariableFutureOnlyTest.php
-|   |       WeightRecordHighVariationRejectsTest.php
+|   |       WeightRecordHighVariationAcceptedTest.php
 |   |       
 |   \---Unit
 |           BatchCalculationServiceTest.php
