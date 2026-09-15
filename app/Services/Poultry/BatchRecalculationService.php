@@ -38,7 +38,6 @@ class BatchRecalculationService
             $totalFeedCost = (float) $batch->feedRecords()->sum('total_feed_cost');
             $totalExpenses = (float) $batch->expenses()->sum('amount');
 
-            // Non-feed, non-waste consumptions add cost on top of feed_records.
             $totalInventoryCost = (float) $batch->inventoryConsumptions()
                 ->whereNotIn('source_type', ['waste', 'feed'])
                 ->sum('total_cost');
@@ -73,7 +72,7 @@ class BatchRecalculationService
                 + $transferOutCount
             );
 
-            // ───────── Current cost (total accumulated) ─────────
+            // ───────── Current cost ─────────
             $currentCost = max(0,
                 $initialCost
                 + $totalFeedCost
@@ -98,11 +97,27 @@ class BatchRecalculationService
                 + $transferOutMortality
             );
 
-            // ───────── Cumulative feed & weight gain ─────────
-            $cumulativeFeed       = max(0, $totalFeedUsed + $transferInFeed + $transferOutFeed);
-            $cumulativeWeightGain = max(0, $transferInWeightGain + $transferOutWeightGain);
+            // ───────── Cumulative feed ─────────
+            $cumulativeFeed = max(0, $totalFeedUsed + $transferInFeed + $transferOutFeed);
 
-            // ───────── Unallocated basis for the remaining flock ─────────
+            // ───────── Cumulative weight gain ─────────
+            // Three components:
+            //   1. Own weight records (integrated ADG × flock × days)
+            //   2. Transfer-in contribution (weight arrived with birds)
+            //   3. Transfer-out contribution (weight left with birds, negative)
+            //
+            // All three must be summed. If any is dropped, FCR on the source
+            // and destination of a transfer will diverge from reality: the
+            // source looks artificially efficient, the destination artificially
+            // inefficient.
+            $ownWeightGain = BatchCalculationService::calculateTotalWeightGain($batch);
+            $cumulativeWeightGain = max(0,
+                $ownWeightGain
+                + $transferInWeightGain
+                + $transferOutWeightGain
+            );
+
+            // ───────── Unallocated basis ─────────
             $unallocatedCost = max(0, $currentCost - (float) $batch->cost_allocated_so_far);
 
             // ───────── Persist ─────────
@@ -111,8 +126,6 @@ class BatchRecalculationService
             $batch->current_cost           = $currentCost;
             $batch->current_average_weight = $currentAvgWeight;
 
-            // This must match BatchCalculationService::getCostPerBird(), which
-            // computes (totalInvestment − cost_allocated_so_far) / remaining_flock.
             $batch->current_average_cost = $currentCount > 0
                 ? $unallocatedCost / $currentCount
                 : 0;
@@ -134,7 +147,6 @@ class BatchRecalculationService
 
             $batch->save();
 
-            // FCR, profit, selling price, stop-loss, etc.
             $batch->updateCachedMetrics();
         });
     }

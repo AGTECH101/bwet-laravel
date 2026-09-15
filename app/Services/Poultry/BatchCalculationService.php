@@ -111,20 +111,6 @@ class BatchCalculationService
         ];
     }
 
-    /**
-     * Total cost basis of the flock currently in this batch.
-     *
-     *   initial chicken cost
-     * + expenses
-     * + feed records (single source of truth for feed cost)
-     * + manual non-feed, non-waste consumptions
-     * + transfer_out cost deltas (negative)
-     * + transfer_in cost deltas (positive)
-     *
-     * Feed-sourced inventory consumptions are stock trail only and must not
-     * contribute again. Waste rows are stock losses and never inflate cost.
-     * Transfers adjust the basis because birds and their cost physically move.
-     */
     public static function calculateTotalInvestment(Batch $batch): float
     {
         $total = (float) ($batch->initial_chicken_cost ?? 0);
@@ -204,14 +190,25 @@ class BatchCalculationService
             $batch->total_culls     = $totals->total_culls ?? 0;
             $batch->total_slaughter = $totals->total_slaughter ?? 0;
 
-            $feedTotal = $batch->feedRecords()->sum('feed_used') ?? 0;
-            $batch->total_feed_used = (float) $feedTotal;
-            $batch->bags_consumed   = $feedTotal > 0 ? $feedTotal / 25 : 0;
+            // ── Feed totals ──
+            // Use the persisted total_feed_used, which already includes
+            // transfer adjustments applied by BatchRecalculationService.
+            $feedTotal = (float) $batch->total_feed_used;
 
-            $batch->total_weight_gain = self::calculateTotalWeightGain($batch);
+            $batch->bags_consumed = $feedTotal > 0
+                ? round($feedTotal / 25, 2)
+                : 0;
 
-            $batch->current_cfcr = ($batch->total_feed_used > 0 && $batch->total_weight_gain > 0)
-                ? $batch->total_feed_used / $batch->total_weight_gain
+            // ── Weight gain ──
+            // total_weight_gain is set by BatchRecalculationService and
+            // already includes (own weight records + transfer in − transfer out).
+            // We deliberately do NOT recompute it here — doing so would drop
+            // the transfer contributions and desync FCR between source and
+            // destination batches.
+            $weightGain = (float) $batch->total_weight_gain;
+
+            $batch->current_cfcr = ($feedTotal > 0 && $weightGain > 0)
+                ? $feedTotal / $weightGain
                 : 0;
             $batch->current_ifcr = self::calculateIFCR($batch);
 
@@ -248,7 +245,16 @@ class BatchCalculationService
         });
     }
 
-    private static function calculateTotalWeightGain(Batch $batch): float
+    /**
+     * Compute the batch's own weight gain from its weight records.
+     *
+     * Integrates ADG between consecutive weight records and scales by the
+     * average flock size during that interval. Does NOT include transfer
+     * contributions — those are added by BatchRecalculationService.
+     *
+     * Made public so the recalc service can reuse it.
+     */
+    public static function calculateTotalWeightGain(Batch $batch): float
     {
         $records = $batch->weightRecords()->orderBy('date')->get();
         if ($records->count() < 2) {

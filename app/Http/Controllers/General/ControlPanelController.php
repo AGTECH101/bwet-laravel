@@ -60,6 +60,13 @@ class ControlPanelController extends Controller
         'expenses'      => [],
     ];
 
+    /**
+     * Counter columns in flock_records are NOT NULL in the database.
+     * Blank values arrive as empty strings or null and must be coerced to 0
+     * before they hit the database.
+     */
+    private const COUNTER_FIELDS = ['mortality', 'culls', 'slaughter'];
+
     public function index(Request $request)
     {
         Gate::authorize('admin');
@@ -136,6 +143,16 @@ class ControlPanelController extends Controller
             }
         }
 
+        // Normalize blank counter fields to 0 so MySQL strict mode accepts them.
+        if ($table === 'flock_records') {
+            foreach (self::COUNTER_FIELDS as $counterField) {
+                if (array_key_exists($counterField, $filtered)) {
+                    $value = $filtered[$counterField];
+                    $filtered[$counterField] = ($value === null || $value === '') ? 0 : (int) $value;
+                }
+            }
+        }
+
         if (empty($filtered)) {
             return response()->json(['error' => 'No editable fields submitted.'], 422);
         }
@@ -197,10 +214,6 @@ class ControlPanelController extends Controller
 
         try {
             DB::transaction(function () use ($record, $batchToRecalc) {
-                // Deleting the record fires the appropriate observer.
-                // Feed records → FeedRecordObserver::deleted deletes the
-                // linked InventoryConsumption → InventoryConsumptionObserver
-                // restores stock exactly once.
                 $record->delete();
 
                 if ($batchToRecalc && $batchToRecalc->exists) {
@@ -219,10 +232,6 @@ class ControlPanelController extends Controller
         }
     }
 
-    /**
-     * Update a feed record and let the observer chain rebuild the linked
-     * consumption row. Do not touch inventory stock here.
-     */
     private function updateFeedRecord(FeedRecord $record, array $data): void
     {
         foreach (['date', 'feed_used', 'inventory_item_id'] as $f) {
@@ -238,9 +247,6 @@ class ControlPanelController extends Controller
         }
         $record->feed_per_bird = 0;
 
-        // Saving fires FeedRecordObserver::updated, which rebuilds the
-        // consumption row. The InventoryConsumptionObserver adjusts stock
-        // exactly once on the delta.
         $record->save();
     }
 

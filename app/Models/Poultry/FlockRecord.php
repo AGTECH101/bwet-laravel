@@ -3,6 +3,7 @@
 namespace App\Models\Poultry;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
@@ -21,7 +22,7 @@ class FlockRecord extends Model
         'slaughter_avg_weight',
         'notes',
         'recorded_by_id',
-        'allocated_cost'
+        'allocated_cost',
     ];
 
     protected $casts = [
@@ -29,6 +30,41 @@ class FlockRecord extends Model
         'slaughter_avg_weight' => 'decimal:3',
         'allocated_cost' => 'decimal:2',
     ];
+
+    /**
+     * Coerce null / empty strings to 0 for the three counter columns.
+     *
+     * The database columns are NOT NULL with DEFAULT 0, but that default
+     * only fires when the column is omitted from an INSERT. Laravel's
+     * ConvertEmptyStringsToNull middleware turns blank form fields into
+     * null, which MySQL strict mode then rejects (error 1048).
+     *
+     * Handling it at the model boundary catches every write path:
+     * forms, Control Panel edits, seeders, and API submissions.
+     */
+    protected function mortality(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => (int) ($value ?? 0),
+            set: fn ($value) => ($value === null || $value === '') ? 0 : (int) $value,
+        );
+    }
+
+    protected function culls(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => (int) ($value ?? 0),
+            set: fn ($value) => ($value === null || $value === '') ? 0 : (int) $value,
+        );
+    }
+
+    protected function slaughter(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => (int) ($value ?? 0),
+            set: fn ($value) => ($value === null || $value === '') ? 0 : (int) $value,
+        );
+    }
 
     public function batch()
     {

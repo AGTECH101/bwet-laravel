@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Poultry;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Poultry\BatchRequest;
+use App\Models\BatchStateMigration;
 use App\Models\Poultry\Batch;
 use App\Models\Poultry\Pen;
 use App\Services\Poultry\BatchRecalculationService;
@@ -100,7 +101,6 @@ class BatchController extends Controller
                 }
             }
 
-            // Full recalc to initialize all derived fields
             BatchRecalculationService::recalculateAll($batch);
 
             return $batch;
@@ -128,9 +128,16 @@ class BatchController extends Controller
 
         $chartData = \App\Services\Poultry\BatchAnalyticsService::getBatchChartData($batch, 30);
 
+        // ── Feed breakdown ──────────────────────────────────────────────
+        // Splits total_feed_used into its three contributors so the batch
+        // page can show the same kind of detail as mortality. Read-only —
+        // no stored fields, no recalculation, no side effects.
+        $feedBreakdown = $this->buildFeedBreakdown($batch);
+
         return view('sectors.poultry.batches.show', compact(
             'batch', 'financialMetrics', 'slaughterTriggers',
-            'recentWeight', 'recentFeed', 'recentExpenses', 'recentFlock', 'chartData'
+            'recentWeight', 'recentFeed', 'recentExpenses', 'recentFlock', 'chartData',
+            'feedBreakdown'
         ));
     }
 
@@ -160,7 +167,6 @@ class BatchController extends Controller
 
             $batch->save();
 
-            // Full recalc after edit
             BatchRecalculationService::recalculateAll($batch);
         });
 
@@ -180,7 +186,7 @@ class BatchController extends Controller
         $batch->delete();
 
         return redirect()->route('poultry.batches.index')
-            ->with('success', "Batch {$batchId} deleted.");
+            ->with("success", "Batch {$batchId} deleted.");
     }
 
     public function export(Batch $batch)
@@ -234,5 +240,38 @@ class BatchController extends Controller
         );
 
         return redirect()->back()->with('warning', 'Batch switched to manual mode.');
+    }
+
+    /**
+     * Break the batch's cumulative feed into its three contributors.
+     *
+     *   own_records     — SUM(feed_records.feed_used) for this batch
+     *   transferred_in  — SUM(migration.feed_moved) where this batch is destination (positive)
+     *   transferred_out — SUM(migration.feed_moved) where this batch is source (negative)
+     *   total           — batch.total_feed_used (the transfer-adjusted figure)
+     *
+     * Own + In + Out should equal Total, except in the edge case where the
+     * recalc service clamped the total at 0 (more feed transferred out than
+     * the batch ever had). The display still reflects the true stored value.
+     */
+    private function buildFeedBreakdown(Batch $batch): array
+    {
+        $ownRecords = (float) $batch->feedRecords()->sum('feed_used');
+
+        $transferredIn = (float) BatchStateMigration::where('destination_batch_id', $batch->id)
+            ->where('migration_type', 'transfer_in')
+            ->sum('feed_moved');
+
+        $transferredOut = (float) BatchStateMigration::where('source_batch_id', $batch->id)
+            ->where('migration_type', 'transfer_out')
+            ->sum('feed_moved');
+
+        return [
+            'own_records'     => $ownRecords,
+            'transferred_in'  => $transferredIn,
+            'transferred_out' => $transferredOut,
+            'total'           => (float) $batch->total_feed_used,
+            'total_bags'      => round(((float) $batch->total_feed_used) / 25, 2),
+        ];
     }
 }

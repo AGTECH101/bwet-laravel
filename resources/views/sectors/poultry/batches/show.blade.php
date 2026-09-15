@@ -33,9 +33,7 @@
 @section('content')
 <div class="space-y-6">
 
-    <!-- ============================================================ -->
     <!-- KEY METRICS -->
-    <!-- ============================================================ -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow p-4 border-l-4 border-blue-500">
             <h3 class="text-sm font-medium text-blue-700"><i class="fas fa-hourglass-half mr-1"></i>Age</h3>
@@ -61,9 +59,7 @@
         </div>
     </div>
 
-    <!-- ============================================================ -->
     <!-- FLOCK STATUS + PERFORMANCE -->
-    <!-- ============================================================ -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 class="text-sm font-medium text-gray-900 mb-4">Flock Status</h3>
@@ -101,13 +97,24 @@
                     <span class="text-sm text-gray-600">cFCR</span>
                     <span class="text-lg font-bold {{ $batch->current_cfcr < 1.8 ? 'text-green-600' : ($batch->current_cfcr < 2.0 ? 'text-yellow-600' : 'text-red-600') }}">{{ format_fcr($batch->current_cfcr) }}</span>
                 </div>
+                <div class="pt-3 border-t border-gray-100 space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Feed Consumed</span>
+                        <span class="text-lg font-bold">{{ number_format($batch->total_feed_used, 2) }} <span class="text-sm font-normal text-gray-500">kg</span></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Bags <span class="text-xs text-gray-400">(25 kg each)</span></span>
+                        <span class="text-lg font-bold text-amber-700">
+                            {{ number_format($batch->bags_consumed ?? 0, 2) }}
+                            <span class="text-sm font-normal text-gray-500">bags</span>
+                        </span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- ============================================================ -->
-    <!-- MORTALITY SPLIT (theft investigation support) -->
-    <!-- ============================================================ -->
+    <!-- MORTALITY OVERVIEW -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-gray-900">
@@ -169,9 +176,90 @@
         </div>
     </div>
 
-    <!-- ============================================================ -->
+    <!-- FEED OVERVIEW -->
+    @php
+        $feedIn  = $feedBreakdown['transferred_in']  ?? 0;
+        $feedOut = $feedBreakdown['transferred_out'] ?? 0;
+        $feedOwn = $feedBreakdown['own_records']     ?? 0;
+        $feedTot = $feedBreakdown['total']           ?? 0;
+        $hasTransfers = abs($feedIn) > 0.0001 || abs($feedOut) > 0.0001;
+    @endphp
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">
+                <i class="fas fa-utensils mr-2 text-green-500"></i> Feed Overview
+            </h3>
+            <span class="text-xs text-gray-500">Feed breakdown: recorded vs. transferred</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="text-center p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <p class="text-xs uppercase tracking-wide text-blue-700 font-medium">Own Feed Records</p>
+                <p class="text-3xl font-bold text-blue-700 mt-1">{{ number_format($feedOwn, 2) }}</p>
+                <p class="text-xs text-blue-600 mt-1">kg logged directly in this batch</p>
+            </div>
+            <div class="text-center p-4 bg-green-50 rounded-lg border border-green-100">
+                <p class="text-xs uppercase tracking-wide text-green-700 font-medium">Transferred In</p>
+                <p class="text-3xl font-bold text-green-700 mt-1">
+                    {{ $feedIn >= 0 ? '+' : '' }}{{ number_format($feedIn, 2) }}
+                </p>
+                <p class="text-xs text-green-600 mt-1">kg arrived with birds received</p>
+            </div>
+            <div class="text-center p-4 bg-orange-50 rounded-lg border border-orange-100">
+                <p class="text-xs uppercase tracking-wide text-orange-700 font-medium">Transferred Out</p>
+                <p class="text-3xl font-bold text-orange-700 mt-1">{{ number_format($feedOut, 2) }}</p>
+                <p class="text-xs text-orange-600 mt-1">kg left with birds sent away</p>
+            </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-4 bg-gray-50 rounded-lg">
+                <p class="text-xs uppercase text-gray-600 font-medium">Total Feed Consumed</p>
+                <p class="text-2xl font-bold mt-1 text-gray-900">{{ number_format($feedTot, 2) }} <span class="text-sm font-normal text-gray-500">kg</span></p>
+                <p class="text-xs text-gray-500 mt-1">
+                    Own {{ number_format($feedOwn, 2) }}
+                    @if(abs($feedIn) > 0.0001) + In {{ number_format($feedIn, 2) }} @endif
+                    @if(abs($feedOut) > 0.0001) − Out {{ number_format(abs($feedOut), 2) }} @endif
+                </p>
+            </div>
+            <div class="p-4 bg-amber-50 rounded-lg border border-amber-100">
+                <p class="text-xs uppercase text-amber-700 font-medium">Total Bags</p>
+                <p class="text-2xl font-bold mt-1 text-amber-700">
+                    {{ number_format($feedBreakdown['total_bags'] ?? 0, 2) }}
+                    <span class="text-sm font-normal text-gray-500">bags</span>
+                </p>
+                <p class="text-xs text-amber-600 mt-1">1 bag = 25 kg</p>
+            </div>
+        </div>
+
+        <div class="mt-3 text-xs text-gray-500 border-t border-gray-200 pt-3">
+            <p class="mb-1">
+                <span class="inline-block w-3 h-3 bg-blue-400 rounded mr-1"></span>
+                <strong>Own Feed Records</strong> — feed entries physically logged against this batch
+            </p>
+            <p class="mb-1">
+                <span class="inline-block w-3 h-3 bg-green-400 rounded mr-1"></span>
+                <strong>Transferred In</strong> — feed share that came with birds received from another batch
+            </p>
+            <p class="mb-1">
+                <span class="inline-block w-3 h-3 bg-orange-400 rounded mr-1"></span>
+                <strong>Transferred Out</strong> — feed share that left with birds sent to another batch
+            </p>
+            <p>
+                <span class="inline-block w-3 h-3 bg-gray-400 rounded mr-1"></span>
+                <strong>Total Feed Consumed</strong> — Own + In − Out (this is the figure used by FCR and cost)
+            </p>
+
+            @unless($hasTransfers)
+                <p class="mt-2 italic text-gray-400">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    This batch has no transfers yet, so Own = Total.
+                </p>
+            @endunless
+        </div>
+    </div>
+
     <!-- SLAUGHTER TRIGGERS -->
-    <!-- ============================================================ -->
     @if(count($slaughterTriggers) > 0)
     <div class="bg-red-50 border border-red-200 rounded-xl p-4">
         <h4 class="text-sm font-semibold text-red-800 mb-3">
@@ -193,9 +281,7 @@
     </div>
     @endif
 
-    <!-- ============================================================ -->
     <!-- GROWTH CHART -->
-    <!-- ============================================================ -->
     @if(!empty($chartData) && !$chartData['no_data'])
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div class="flex items-center justify-between mb-6">
@@ -211,9 +297,7 @@
     </div>
     @endif
 
-    <!-- ============================================================ -->
-    <!-- TABS: Weight / Feed / Expenses / Flock -->
-    <!-- ============================================================ -->
+    <!-- TABS -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="border-b border-gray-200">
             <nav class="flex -mb-px overflow-x-auto" id="batchTabs">
@@ -224,7 +308,6 @@
             </nav>
         </div>
         <div class="p-6">
-            <!-- Weight Tab -->
             <div id="weight-tab" class="tab-content active">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -254,7 +337,6 @@
                 </div>
             </div>
 
-            <!-- Feed Tab -->
             <div id="feed-tab" class="tab-content hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -282,7 +364,6 @@
                 </div>
             </div>
 
-            <!-- Expenses Tab -->
             <div id="expenses-tab" class="tab-content hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -310,7 +391,6 @@
                 </div>
             </div>
 
-            <!-- Flock Tab -->
             <div id="flock-tab" class="tab-content hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -342,9 +422,7 @@
         </div>
     </div>
 
-    <!-- ============================================================ -->
     <!-- QUICK ACTIONS -->
-    <!-- ============================================================ -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
             <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
