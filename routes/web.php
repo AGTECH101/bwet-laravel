@@ -3,12 +3,12 @@
 use App\Http\Controllers\General\DashboardController;
 use App\Http\Controllers\General\SectorSelectionController;
 use App\Http\Controllers\General\SectorController;
-use App\Http\Controllers\General\PriceCalculatorController;
 use App\Http\Controllers\General\NotificationController;
 use App\Http\Controllers\General\ObservationController;
 use App\Http\Controllers\General\HistoryQueryController;
 use App\Http\Controllers\General\ExportController;
 use App\Http\Controllers\General\AdminUserController;
+use App\Http\Controllers\General\BatchTransferAdminController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -33,10 +33,6 @@ Route::middleware(['auth', 'verified', 'sector.selected'])->group(function () {
 
     // Sector picker (optional)
     Route::get('/sectors/list', [SectorController::class, 'index'])->name('sectors.list');
-
-    // Price Calculator
-    Route::get('/price-calculator', [PriceCalculatorController::class, 'index'])->name('price-calculator.index');
-    Route::post('/price-calculator', [PriceCalculatorController::class, 'calculate'])->name('price-calculator.calculate');
 
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
@@ -99,6 +95,16 @@ Route::middleware(['auth', 'can:admin'])->prefix('control-panel')->name('control
 });
 
 // ============================================================
+// BATCH TRANSFER ADMIN EDIT (Admin Only)
+// Accessible from the History tab regardless of the currently
+// selected sector so the admin can edit a transfer from anywhere.
+// ============================================================
+Route::middleware(['auth', 'can:admin'])->prefix('admin/transfers')->name('admin.transfers.')->group(function () {
+    Route::get('{transfer}/edit', [BatchTransferAdminController::class, 'edit'])->name('edit');
+    Route::put('{transfer}', [BatchTransferAdminController::class, 'update'])->name('update');
+});
+
+// ============================================================
 // RECALCULATION ROUTE (Admin Only)
 // Use this to force-recalculate all batches from raw records.
 // Visit once in browser: /recalculate-batches
@@ -117,10 +123,8 @@ Route::get('/home', function () {
     return redirect()->route(auth()->check() ? 'sectors.index' : 'home');
 });
 
-
 // To run migrations online
 Route::get('/run-migrations', function () {
-    // Only allow if you're logged in as admin (optional but recommended)
     if (!auth()->check() || auth()->user()->role !== 'admin') {
         abort(403, 'Unauthorized.');
     }

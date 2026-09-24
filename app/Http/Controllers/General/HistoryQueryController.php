@@ -14,7 +14,7 @@ class HistoryQueryController extends Controller
 {
     public function index()
     {
-        $queries = HistoryQuery::where('created_by_id', auth()->id())
+        $recentQueries = HistoryQuery::where('created_by_id', auth()->id())
             ->latest('last_executed')
             ->take(10)
             ->get();
@@ -22,14 +22,14 @@ class HistoryQueryController extends Controller
         $batches = Batch::where('status', 'active')->get();
         $users = User::where('is_approved', true)->get();
 
-        return view('general.history.index', compact('queries', 'batches', 'users'));
+        return view('general.history.index', compact('recentQueries', 'batches', 'users'));
     }
 
     public function execute(Request $request)
     {
         $data = $request->validate([
             'name' => 'nullable|string|max:200',
-            'query_type' => 'required|string|in:expenses,feed,weight,flock,observations,inventory,all',
+            'query_type' => 'required|string|in:expenses,feed,weight,flock,observations,inventory,transfers,all',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
             'user_filter' => 'nullable|exists:users,id',
@@ -65,11 +65,25 @@ class HistoryQueryController extends Controller
         ]);
     }
 
-    public function show(HistoryQuery $historyQuery)
+    /**
+     * Show a saved query and re-run it.
+     *
+     * The route param is `{query}` so the method argument must be `$query`
+     * for Laravel's implicit route-model binding to match. The view also
+     * expects a `$results` array (not the raw service result).
+     */
+    public function show(HistoryQuery $query)
     {
-        Gate::authorize('view', $historyQuery);
-        $data = $historyQuery->toArray();
+        Gate::authorize('view', $query);
+
+        $data = $query->toArray();
         $result = HistoryQueryService::execute($data);
-        return view('general.history.show', compact('historyQuery', 'result'));
+
+        return view('general.history.show', [
+            'query' => $query,
+            'results' => $result['results'],
+            'summary' => $result['summary'] ?? null,
+            'count' => $result['count'] ?? count($result['results']),
+        ]);
     }
 }

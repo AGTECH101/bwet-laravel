@@ -43,8 +43,26 @@
                         @foreach($results as $row)
                             <tr>
                                 <td class="px-4 py-3 text-sm text-gray-900">{{ $row['date'] ?? '-' }}</td>
-                                <td class="px-4 py-3 text-sm text-gray-700">{{ ucfirst($row['type'] ?? 'record') }}</td>
-                                <td class="px-4 py-3 text-sm text-gray-700">{{ $row['description'] ?? '-' }}</td>
+                                <td class="px-4 py-3 text-sm">
+                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium
+                                        {{ ($row['type'] ?? '') == 'expense' ? 'bg-red-100 text-red-800' :
+                                           (($row['type'] ?? '') == 'feed' ? 'bg-yellow-100 text-yellow-800' :
+                                           (($row['type'] ?? '') == 'weight' ? 'bg-blue-100 text-blue-800' :
+                                           (($row['type'] ?? '') == 'flock' ? 'bg-green-100 text-green-800' :
+                                           (($row['type'] ?? '') == 'transfer' ? 'bg-purple-100 text-purple-800' :
+                                           'bg-gray-100 text-gray-800')))) }}">
+                                        {{ ucfirst($row['type'] ?? 'record') }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-700">
+                                    {{ $row['description'] ?? '-' }}
+                                    @if(($row['type'] ?? '') === 'transfer' && auth()->user()->role === 'admin' && !empty($row['transfer_id']))
+                                        <a href="{{ route('admin.transfers.edit', $row['transfer_id']) }}"
+                                           class="ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-primary-100 text-primary-800 hover:bg-primary-200">
+                                            <i class="fas fa-edit mr-1"></i> Edit Transfer
+                                        </a>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-sm text-right font-medium text-gray-900">{{ isset($row['amount']) && $row['amount'] !== null ? format_currency($row['amount']) : '-' }}</td>
                                 <td class="px-4 py-3 text-sm text-gray-700">{{ $row['user'] ?? 'Unknown' }}</td>
                                 <td class="px-4 py-3 text-sm text-gray-700">{{ $row['batch'] ?? '-' }}</td>

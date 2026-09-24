@@ -36,6 +36,7 @@
                             <option value="flock">Flock Records</option>
                             <option value="observations">Observations</option>
                             <option value="inventory">Inventory</option>
+                            <option value="transfers">Batch Transfers</option>
                             <option value="all">All Records</option>
                         </select>
                     </div>
@@ -145,11 +146,19 @@
                                            ($row['type'] == 'feed' ? 'bg-yellow-100 text-yellow-800' :
                                            ($row['type'] == 'weight' ? 'bg-blue-100 text-blue-800' :
                                            ($row['type'] == 'flock' ? 'bg-green-100 text-green-800' :
-                                           'bg-gray-100 text-gray-800'))) }}">
+                                           ($row['type'] == 'transfer' ? 'bg-purple-100 text-purple-800' :
+                                           'bg-gray-100 text-gray-800')))) }}">
                                         {{ ucfirst($row['type']) }}
                                     </span>
                                 </td>
-                                <td class="px-4 py-2 text-sm max-w-xs truncate">{{ Str::limit($row['description'] ?? '', 60) }}</td>
+                                <td class="px-4 py-2 text-sm max-w-xs truncate">
+                                    {{ Str::limit($row['description'] ?? '', 60) }}
+                                    @if($row['type'] === 'transfer' && auth()->user()->role === 'admin' && !empty($row['transfer_id']))
+                                        <a href="{{ route('admin.transfers.edit', $row['transfer_id']) }}" class="ml-2 text-xs font-medium text-primary-600 hover:text-primary-800">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </a>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-2 text-sm text-right font-medium">{{ isset($row['amount']) ? format_currency($row['amount']) : '-' }}</td>
                                 <td class="px-4 py-2 text-sm">{{ $row['user'] ?? 'Unknown' }}</td>
                                 <td class="px-4 py-2 text-sm">{{ $row['batch'] ?? '-' }}</td>

@@ -148,11 +148,20 @@
                                        ($row['type'] == 'feed' ? 'bg-yellow-100 text-yellow-800' :
                                        ($row['type'] == 'weight' ? 'bg-blue-100 text-blue-800' :
                                        ($row['type'] == 'flock' ? 'bg-green-100 text-green-800' :
-                                       'bg-gray-100 text-gray-800'))) }}">
+                                       ($row['type'] == 'transfer' ? 'bg-purple-100 text-purple-800' :
+                                       'bg-gray-100 text-gray-800')))) }}">
                                     {{ ucfirst($row['type']) }}
                                 </span>
                             </td>
-                            <td class="px-4 py-2 text-sm max-w-xs truncate">{{ Str::limit($row['description'] ?? '', 60) }}</td>
+                            <td class="px-4 py-2 text-sm max-w-xs truncate">
+                                {{ Str::limit($row['description'] ?? '', 60) }}
+                                @if($row['type'] === 'transfer' && auth()->user()->role === 'admin' && !empty($row['transfer_id']))
+                                    <a href="{{ route('admin.transfers.edit', $row['transfer_id']) }}"
+                                       class="ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-primary-100 text-primary-800 hover:bg-primary-200">
+                                        <i class="fas fa-edit mr-1"></i> Edit
+                                    </a>
+                                @endif
+                            </td>
                             <td class="px-4 py-2 text-sm text-right font-medium">{{ isset($row['amount']) ? format_currency($row['amount']) : '-' }}</td>
                             <td class="px-4 py-2 text-sm">{{ $row['user'] ?? 'Unknown' }}</td>
                             <td class="px-4 py-2 text-sm">{{ $row['batch'] ?? '-' }}</td>
@@ -170,7 +179,6 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Search
     const searchInput = document.getElementById('searchResults');
     searchInput?.addEventListener('input', function() {
         const query = this.value.toLowerCase();
@@ -180,7 +188,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Sort
     const sortSelect = document.getElementById('sortResults');
     sortSelect?.addEventListener('change', function() {
         const tbody = document.querySelector('#resultsTable tbody');
@@ -205,7 +212,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Export CSV
 function exportResults() {
     const rows = document.querySelectorAll('.result-row:not([style*="display: none"])');
     if (!rows.length) {
@@ -233,3 +239,4 @@ function exportResults() {
 }
 </script>
 @endpush
+@endsection

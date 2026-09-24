@@ -41,12 +41,6 @@ class RealisticFarmSeeder extends Seeder
         $sectorId = $sector->id;
 
         // ─── 1. CREATE BATCHES ──────────────────────────────
-        // 15 batches guarantee at least 5 records for every key category
-        // (status: active/closed/completed, hatchery: Broiler/Layer/Hybrid)
-        // instead of leaving the distribution to chance. Age, phase,
-        // mortality, slaughter, weight, and cost are then derived from
-        // status/age rather than drawn independently, so the data tells a
-        // coherent story instead of being unrelated random numbers.
         $batchIds = collect(range(11, 25))->map(fn ($n) => 'B00' . $n);
 
         $statusPool = collect(array_fill(0, 5, 'active'))
@@ -67,9 +61,6 @@ class RealisticFarmSeeder extends Seeder
             $status = $statusPool[$i];
             $hatchery = $hatcheryPool[$i];
 
-            // Age correlates with status: a batch can't be "completed" at
-            // 10 days old, and "closed" batches are closed early (before a
-            // full ~42-day broiler cycle), typically due to a problem.
             $ageDays = match ($status) {
                 'active' => rand(3, 40),
                 'closed' => rand(10, 35),
@@ -79,8 +70,6 @@ class RealisticFarmSeeder extends Seeder
 
             $startingFlock = rand(2000, 5000);
 
-            // Mortality rate correlates with status — batches closed early
-            // usually had a health/performance issue driving that closure.
             $mortalityRate = match ($status) {
                 'closed' => rand(8, 18) / 100,
                 'completed' => rand(2, 6) / 100,
@@ -90,9 +79,6 @@ class RealisticFarmSeeder extends Seeder
             $culls = rand(10, 80);
             $preSlaughter = max(0, $startingFlock - $mortality - $culls);
 
-            // Slaughter/sales correlate with status: completed batches have
-            // sold through almost their whole flock; active/closed ones
-            // mostly haven't.
             $slaughterRate = match ($status) {
                 'completed' => rand(85, 100) / 100,
                 'closed' => rand(20, 50) / 100,
@@ -101,13 +87,9 @@ class RealisticFarmSeeder extends Seeder
             $slaughter = (int) round($preSlaughter * $slaughterRate);
             $remaining = max(0, $preSlaughter - $slaughter);
 
-            // Weight follows a simple broiler growth curve keyed to age
-            // (instead of an independent random draw), so age, weight, and
-            // feed/cost below all move together the way they would on a
-            // real farm.
             $avgWeight = round(min(3.0, max(0.12, 0.05 + $ageDays * 0.045 + (rand(-4, 4) / 100))), 3);
 
-            $fcr = round(rand(155, 225) / 100, 2); // feed:gain ratio
+            $fcr = round(rand(155, 225) / 100, 2);
             $totalFeedUsed = round(max($remaining, 1) * $avgWeight * $fcr, 1);
             $feedCostPerKg = round(rand(250, 400) / 100, 2);
             $initialChickenCost = $startingFlock * rand(250, 400);
@@ -147,7 +129,6 @@ class RealisticFarmSeeder extends Seeder
                     'manual_mode_reason' => $status === 'closed' ? 'Closed early — health/performance issue' : null,
                     'manual_mode_enabled_by_id' => $status === 'closed' ? $admin->id : null,
                     'manual_mode_enabled_at' => $status === 'closed' ? now()->subDays(rand(1, max($ageDays, 1))) : null,
-                    // ─── CHECKPOINT COLUMNS ──────────────
                     'current_count' => $remaining,
                     'current_weight_kg' => $currentWeight,
                     'current_cost' => $currentCost,
@@ -160,20 +141,10 @@ class RealisticFarmSeeder extends Seeder
 
         // ─── 2. CREATE FLOCK RECORDS ──────────────────────────────
         foreach ($batches as $batch) {
-            // Draw 5 distinct day-offsets (not 5 independent rand() calls) so we
-            // never generate the same date twice for this batch in one run —
-            // flock_records has a unique constraint on (poultry_batch_id, date).
             $flockDayOffsets = collect(range(1, 30))->shuffle()->take(5);
             foreach ($flockDayOffsets as $daysAgo) {
                 $date = Carbon::now()->subDays($daysAgo)->format('Y-m-d');
 
-                // firstOrCreate() can't be trusted here across separate seeder
-                // runs: the stored `date` comes back as a full datetime string
-                // (e.g. "2026-08-22 00:00:00") while this bare "Y-m-d" string
-                // won't match it exactly, so firstOrCreate's lookup misses an
-                // already-seeded row and tries to insert a duplicate. whereDate()
-                // compares the calendar date only, so it correctly finds rows
-                // seeded in a previous run and skips re-creating them.
                 $exists = FlockRecord::where('poultry_batch_id', $batch->id)
                     ->whereDate('date', $date)
                     ->exists();
@@ -198,10 +169,6 @@ class RealisticFarmSeeder extends Seeder
                 ]);
             }
 
-            // Recompute batch totals from the actual stored flock records
-            // (source of truth) rather than an in-memory running counter —
-            // that counter would be wrong on any rerun where some dates were
-            // skipped above because they already existed.
             $totals = FlockRecord::where('poultry_batch_id', $batch->id)
                 ->selectRaw('COALESCE(SUM(mortality), 0) as mortality, COALESCE(SUM(culls), 0) as culls, COALESCE(SUM(slaughter), 0) as slaughter')
                 ->first();
@@ -214,13 +181,11 @@ class RealisticFarmSeeder extends Seeder
             $batch->save();
         }
 
-        // After creating flock records for each batch, set mortality fields
         foreach ($batches as $batch) {
-            // Recalculate total_mortality from flock records
             $totalMort = $batch->flockRecords()->sum('mortality') ?? 0;
             $batch->total_mortality = $totalMort;
-            $batch->historical_mortality = $totalMort;  // all deaths are historical initially
-            $batch->pen_mortality = $totalMort;        // all deaths happened in this pen initially
+            $batch->historical_mortality = $totalMort;
+            $batch->pen_mortality = $totalMort;
             $batch->mortality_rate = $batch->starting_flock > 0 ? ($totalMort / $batch->starting_flock) * 100 : 0;
             $batch->save();
         }
@@ -252,7 +217,6 @@ class RealisticFarmSeeder extends Seeder
                     'recorded_by_id' => $admin->id,
                 ]);
 
-                // Update batch average weight from last record
                 if ($j == 5) {
                     $batch->current_average_weight = $avg;
                     $batch->current_weight_kg = $batch->current_count * $avg;
@@ -264,7 +228,6 @@ class RealisticFarmSeeder extends Seeder
         // ─── 4. CREATE FEED RECORDS ──────────────────────────────
         $feedItems = InventoryItem::where('category', 'feed')->get();
         if ($feedItems->isEmpty()) {
-            // Create feed items if none exist
             $feedItems = collect();
             $feedData = [
                 ['name' => 'Starter Feed', 'category' => 'feed', 'unit' => 'kg', 'cost_per_unit' => rand(250, 400) / 100],
@@ -309,12 +272,10 @@ class RealisticFarmSeeder extends Seeder
                     'recorded_by_id' => $admin->id,
                 ]);
 
-                // Update inventory stock (simulate consumption)
                 $item->quantity_in_stock = max(0, $item->quantity_in_stock - $feedUsed);
                 $item->quantity_used += $feedUsed;
                 $item->save();
 
-                // Create inventory consumption record
                 InventoryConsumption::create([
                     'inventory_item_id' => $item->id,
                     'poultry_batch_id' => $batch->id,
@@ -328,17 +289,12 @@ class RealisticFarmSeeder extends Seeder
                 ]);
             }
 
-            // Update batch feed totals
             $batch->total_feed_used = $totalFeedUsed;
             $batch->bags_consumed = $totalFeedUsed / 25;
             $batch->save();
         }
 
         // ─── 5. CREATE EXPENSES ──────────────────────────────
-        // Cycle through categories with a running counter instead of
-        // array_rand() so every category is guaranteed to appear multiple
-        // times across the 75 records generated below (15 batches × 5),
-        // rather than leaving coverage to chance.
         $categories = ['medication', 'vaccination', 'labor', 'utilities', 'maintenance', 'transport', 'packaging', 'other'];
         $expenseCounter = 0;
         foreach ($batches as $batch) {
@@ -366,8 +322,6 @@ class RealisticFarmSeeder extends Seeder
         foreach ($batches as $batch) {
             $today = now()->format('Y-m-d');
 
-            // Same firstOrCreate date-mismatch issue as FlockRecord above —
-            // use whereDate() to reliably detect an already-seeded row.
             $exists = PerformanceMetric::where('poultry_batch_id', $batch->id)
                 ->whereDate('date', $today)
                 ->exists();
@@ -391,10 +345,15 @@ class RealisticFarmSeeder extends Seeder
         }
 
         // ─── 7. CREATE BATCH STATE MIGRATIONS (Transfers) ──────────────
-        // With 5 active batches now guaranteed, transfer between every
-        // consecutive pair (sorting-by-size style) so the migration/
-        // checkpoint model has several varied transfers to work with,
-        // instead of a single pair.
+        //
+        // Sign convention (must match BatchTransferController@store and
+        // BatchRecalculationService):
+        //   transfer_out : all metrics are NEGATIVE
+        //   transfer_in  : all metrics are POSITIVE
+        // Source/destination IDs stay the same on BOTH rows — the direction
+        // is encoded by migration_type, not by swapping the batch IDs.
+        // The transfer_in row stores its paired transfer_out row's id in
+        // source_id so the admin edit screen can find both halves.
         if (Schema::hasTable('batch_state_migrations')) {
             $activeBatches = $batches->where('status', 'active')->values();
 
@@ -426,7 +385,10 @@ class RealisticFarmSeeder extends Seeder
                 $source->remaining_flock = $source->current_count;
                 $source->save();
 
-                // Update destination
+                // Update destination. Bump starting_flock so mortality rate
+                // for the destination remains a meaningful percentage of the
+                // total flock it has ever held.
+                $destination->starting_flock += $transferCount;
                 $destination->current_count += $transferCount;
                 $destination->current_weight_kg += $transferWeight;
                 $destination->current_cost += $transferCost;
@@ -439,36 +401,44 @@ class RealisticFarmSeeder extends Seeder
                 $destination->remaining_flock = $destination->current_count;
                 $destination->save();
 
-                // Log the migration (source side)
-                BatchStateMigration::create([
+                // Log the transfer_out row
+                $transferOut = BatchStateMigration::create([
                     'source_batch_id' => $source->id,
                     'destination_batch_id' => $destination->id,
                     'migration_type' => 'transfer_out',
-                    'count_moved' => $transferCount,
-                    'weight_moved' => $transferWeight,
-                    'cost_moved' => $transferCost,
+                    'source_type' => 'batch_transfer',
+                    'count_moved' => -$transferCount,
+                    'weight_moved' => -$transferWeight,
+                    'cost_moved' => -$transferCost,
+                    'mortality_moved' => 0,
+                    'feed_moved' => 0,
+                    'weight_gain_moved' => 0,
                     'source_state_before' => $sourceBefore,
                     'destination_state_before' => $destBefore,
                     'created_by_id' => $admin->id,
                 ]);
 
-                // Log the migration (destination side)
+                // Log the transfer_in row (same source/destination IDs, positive values)
                 BatchStateMigration::create([
-                    'source_batch_id' => $destination->id,
-                    'destination_batch_id' => $source->id,
+                    'source_batch_id' => $source->id,
+                    'destination_batch_id' => $destination->id,
                     'migration_type' => 'transfer_in',
+                    'source_type' => 'batch_transfer',
+                    'source_id' => $transferOut->id,
                     'count_moved' => $transferCount,
                     'weight_moved' => $transferWeight,
                     'cost_moved' => $transferCost,
-                    'source_state_before' => $destBefore,
-                    'destination_state_before' => $sourceBefore,
+                    'mortality_moved' => 0,
+                    'feed_moved' => 0,
+                    'weight_gain_moved' => 0,
+                    'source_state_before' => $sourceBefore,
+                    'destination_state_before' => $destBefore,
                     'created_by_id' => $admin->id,
                 ]);
             }
         }
 
         // ─── 8. CREATE ADDITIONAL INVENTORY ITEMS ──────────────────────────────
-        // (if they don't already exist – we create a wide variety)
         $inventoryData = [
             ['name' => 'Starter Feed', 'category' => 'feed', 'unit' => 'kg', 'cost_per_unit' => rand(100, 500)],
             ['name' => 'Finisher Feed', 'category' => 'feed', 'unit' => 'kg', 'cost_per_unit' => rand(100, 500)],
@@ -499,9 +469,6 @@ class RealisticFarmSeeder extends Seeder
         }
 
         // ─── 9. CREATE MISCELLANEOUS INVENTORY CONSUMPTIONS ──────────────────────────────
-        // 24 records, cycling source_type deterministically, guarantees all
-        // 4 source types appear at least 6 times each (24 / 4) instead of
-        // leaving it to random chance over only 10 draws.
         $allItems = InventoryItem::all();
         $sourceTypes = ['manual', 'feed', 'expense', 'waste'];
         for ($i = 0; $i < 24; $i++) {

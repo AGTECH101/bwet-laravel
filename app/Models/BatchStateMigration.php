@@ -16,6 +16,7 @@ class BatchStateMigration extends Model
         'migration_type',
         'source_type',
         'source_id',
+        'reason',
         'count_moved',
         'weight_moved',
         'cost_moved',

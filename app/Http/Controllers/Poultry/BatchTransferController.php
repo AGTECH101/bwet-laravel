@@ -76,21 +76,27 @@ class BatchTransferController extends Controller
         $transferFeed = $source->total_feed_used * $transferFraction;
         $transferWeightGain = $source->total_weight_gain * $transferFraction;
 
+        $reason = $validated['reason'] ?? null;
+
         DB::transaction(function () use (
             $source, $destination,
             $transferCount, $transferWeight, $transferCost,
-            $transferMortality, $transferFeed, $transferWeightGain
+            $transferMortality, $transferFeed, $transferWeightGain,
+            $reason
         ) {
             // Snapshot states before
             $sourceBefore = $source->getCurrentState();
             $destBefore = $destination->getCurrentState();
 
             // ── Log transfer migrations (source side) ──
-            BatchStateMigration::create([
+            // Signed deltas: transfer_out is negative on every metric.
+            // This is the sign convention BatchRecalculationService expects.
+            $transferOut = BatchStateMigration::create([
                 'source_batch_id' => $source->id,
                 'destination_batch_id' => $destination->id,
                 'migration_type' => 'transfer_out',
                 'source_type' => 'batch_transfer',
+                'reason' => $reason,
                 'count_moved' => -$transferCount,
                 'weight_moved' => -$transferWeight,
                 'cost_moved' => -$transferCost,
@@ -103,11 +109,15 @@ class BatchTransferController extends Controller
             ]);
 
             // ── Log transfer migrations (destination side) ──
+            // source_id on the transfer_in row links back to the transfer_out
+            // row so the admin edit screen can find both halves of a transfer.
             BatchStateMigration::create([
                 'source_batch_id' => $source->id,
                 'destination_batch_id' => $destination->id,
                 'migration_type' => 'transfer_in',
                 'source_type' => 'batch_transfer',
+                'source_id' => $transferOut->id,
+                'reason' => $reason,
                 'count_moved' => $transferCount,
                 'weight_moved' => $transferWeight,
                 'cost_moved' => $transferCost,

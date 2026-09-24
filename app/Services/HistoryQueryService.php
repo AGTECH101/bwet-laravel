@@ -2,14 +2,14 @@
 
 namespace App\Services;
 
-use App\Models\Poultry\Batch;
-use App\Models\User;
-use App\Models\Expense;
-use App\Models\Poultry\FeedRecord;
-use App\Models\Poultry\WeightRecord;
-use App\Models\Poultry\FlockRecord;
+use App\Models\BatchStateMigration;
 use App\Models\ObservationReport;
+use App\Models\Poultry\Batch;
+use App\Models\Poultry\FeedRecord;
+use App\Models\Poultry\FlockRecord;
 use App\Models\Poultry\InventoryItem;
+use App\Models\Poultry\WeightRecord;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -40,6 +40,9 @@ class HistoryQueryService
                 break;
             case 'inventory':
                 $results = self::queryInventory($filters);
+                break;
+            case 'transfers':
+                $results = self::queryTransfers($filters);
                 break;
             case 'all':
                 $results = self::queryAll($filters);
@@ -200,7 +203,7 @@ class HistoryQueryService
             $query->where('reported_by_id', $filters['user_filter']);
         }
         if (!empty($filters['category_filter'])) {
-            $query->whereHas('category', fn($q) => $q->where('name', 'like', "%{$filters['category_filter']}%"));
+            $query->whereHas('category', fn ($q) => $q->where('name', 'like', "%{$filters['category_filter']}%"));
         }
 
         return $query->latest('reported_at')->get()->map(function ($report) {
@@ -246,6 +249,73 @@ class HistoryQueryService
         })->toArray();
     }
 
+    /**
+     * Return batch transfers.
+     *
+     * Only `transfer_out` rows are returned (each transfer produces two
+     * migration rows — one out, one in — and showing both would duplicate
+     * every transfer in the results table). The paired `transfer_in` row is
+     * discoverable via its `source_id` link.
+     */
+    private static function queryTransfers(array $filters): array
+    {
+        $query = BatchStateMigration::with(['sourceBatch', 'destinationBatch', 'createdBy'])
+            ->where('migration_type', 'transfer_out');
+
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('created_at', '>=', $filters['date_from']);
+        }
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('created_at', '<=', $filters['date_to']);
+        }
+        if (!empty($filters['user_filter'])) {
+            $query->where('created_by_id', $filters['user_filter']);
+        }
+        if (!empty($filters['batch_filter'])) {
+            $query->where(function ($q) use ($filters) {
+                $q->where('source_batch_id', $filters['batch_filter'])
+                  ->orWhere('destination_batch_id', $filters['batch_filter']);
+            });
+        }
+        if (!empty($filters['min_amount'])) {
+            // Amount filter applies to the absolute value of cost moved.
+            $query->whereRaw('ABS(cost_moved) >= ?', [$filters['min_amount']]);
+        }
+        if (!empty($filters['max_amount'])) {
+            $query->whereRaw('ABS(cost_moved) <= ?', [$filters['max_amount']]);
+        }
+
+        return $query->latest('created_at')->get()->map(function ($transfer) {
+            $count = abs((int) $transfer->count_moved);
+            $weight = abs((float) $transfer->weight_moved);
+            $cost = abs((float) $transfer->cost_moved);
+            $sourceLabel = $transfer->sourceBatch?->batch_id ?? 'Unknown';
+            $destLabel = $transfer->destinationBatch?->batch_id ?? 'Unknown';
+
+            return [
+                'type' => 'transfer',
+                'transfer_id' => $transfer->id,
+                'date' => $transfer->created_at->toDateString(),
+                'description' => sprintf(
+                    'Transfer: %s birds from %s to %s',
+                    number_format($count),
+                    $sourceLabel,
+                    $destLabel
+                ),
+                'amount' => $cost,
+                'user' => $transfer->createdBy?->name ?? 'Unknown',
+                'batch' => $sourceLabel,
+                'destination' => $destLabel,
+                'count' => $count,
+                'weight' => $weight,
+                'cost' => $cost,
+                'reason' => $transfer->reason,
+                'source_batch_id' => $transfer->source_batch_id,
+                'destination_batch_id' => $transfer->destination_batch_id,
+            ];
+        })->toArray();
+    }
+
     private static function queryAll(array $filters): array
     {
         $results = [];
@@ -253,11 +323,12 @@ class HistoryQueryService
         $feed = self::queryFeed($filters);
         $weights = self::queryWeights($filters);
         $flock = self::queryFlock($filters);
+        $transfers = self::queryTransfers($filters);
 
-        $results = array_merge($expenses, $feed, $weights, $flock);
+        $results = array_merge($expenses, $feed, $weights, $flock, $transfers);
 
         // Sort by date descending
-        usort($results, fn($a, $b) => strtotime($b['date']) - strtotime($a['date']));
+        usort($results, fn ($a, $b) => strtotime($b['date']) - strtotime($a['date']));
 
         return $results;
     }
