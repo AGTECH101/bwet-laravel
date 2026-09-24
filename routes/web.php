@@ -9,6 +9,7 @@ use App\Http\Controllers\General\HistoryQueryController;
 use App\Http\Controllers\General\ExportController;
 use App\Http\Controllers\General\AdminUserController;
 use App\Http\Controllers\General\BatchTransferAdminController;
+use App\Http\Controllers\General\SitemapController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -19,6 +20,9 @@ use Illuminate\Support\Facades\Route;
 
 // Landing page (public)
 Route::view('/', 'welcome')->name('home');
+
+// Sitemap for search engines (public, no auth, no session needed)
+Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');
 
 // Sector selection (authenticated)
 Route::middleware(['auth'])->group(function () {

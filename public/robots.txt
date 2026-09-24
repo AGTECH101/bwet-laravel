@@ -1,21 +1,52 @@
+# robots.txt for BWET Farms
+# https://www.robotstxt.org/robotstxt.html
+
 User-agent: *
 Allow: /
 
-# Block sensitive/admin areas
-Disallow: /admin
+# ── Authentication and account pages ─────────────────────────────
+# Never crawl login, registration, password reset, or two-factor.
 Disallow: /login
+Disallow: /logout
 Disallow: /register
-Disallow: /password-reset
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /password
+Disallow: /user/
+Disallow: /email/
+Disallow: /verify-email
+
+# ── Authenticated application pages ──────────────────────────────
+# These require a logged-in session; Google can never render them.
 Disallow: /dashboard
-Disallow: /api/
+Disallow: /sectors
+Disallow: /home
+Disallow: /profile
+Disallow: /notifications
+Disallow: /observations
+Disallow: /history
+Disallow: /export
+Disallow: /price-calculator
+Disallow: /recalculate-batches
+Disallow: /run-migrations
 
-# Block Laravel's internal paths (if exposed)
-Disallow: /storage/framework/
-Disallow: /storage/logs/
-Disallow: /vendor/
+# ── Poultry sector (entirely authenticated) ─────────────────────
+Disallow: /poultry
 
-# Block query strings (optional – prevents duplicate content)
-Disallow: /*?*
+# ── Administration ──────────────────────────────────────────────
+Disallow: /admin
+Disallow: /control-panel
+Disallow: /system
 
-# Allow the sitemap (helps crawlers find it)
+# ── System internals ────────────────────────────────────────────
+Disallow: /up
+Disallow: /.env
+Disallow: /.git
+Disallow: /.htaccess
+Disallow: /vendor
+Disallow: /bootstrap
+
+# ── Sitemap location ────────────────────────────────────────────
+# IMPORTANT: replace REPLACE_WITH_YOUR_DOMAIN with the exact value
+# of APP_URL in your .env (e.g. https://bwetfarms.com).
 Sitemap: https://bwetfarms.com/sitemap.xml
